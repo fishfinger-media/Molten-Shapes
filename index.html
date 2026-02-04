@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Molten Shapes</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Molten Shapes</h1>
+        <div class="controls">
+          <button type="button" id="randomBtn" class="btn btn-primary">
+            Random
+          </button>
+          <button type="button" id="exportBtn" class="btn btn-secondary">
+            Export PNG
+          </button>
+        </div>
+      </header>
+
+      <main class="canvas-container">
+        <canvas id="canvas"></canvas>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
