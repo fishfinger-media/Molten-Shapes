@@ -2,7 +2,7 @@
  * Configuration - extend for colors, shadows, etc.
  */
 export const config = {
-  shapeColor: '#3c23e6',
+  glowColor: '#2F49FF',
   backgroundColor: 'transparent',
   normalizedHeight: 200,
   exportWidth: 1000,

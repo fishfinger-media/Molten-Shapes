@@ -5,20 +5,33 @@ import { rotatePoint } from './shapeUtils.js';
 import { config } from './config.js';
 
 /**
- * Draw a single shape to canvas context
+ * Draw a shape with a thick inset glow at the edges - no fill, no outline.
+ * Uses clip + thick stroked path so the glow appears only inside the shape.
  */
-function drawShape(ctx, vertices, position, rotation, color) {
+function drawShape(ctx, vertices, position, rotation) {
   ctx.save();
   ctx.translate(position.x, position.y);
   ctx.rotate(rotation);
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(vertices[0].x, vertices[0].y);
-  for (let i = 1; i < vertices.length; i++) {
-    ctx.lineTo(vertices[i].x, vertices[i].y);
-  }
-  ctx.closePath();
-  ctx.fill();
+
+  const drawPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    for (let i = 1; i < vertices.length; i++) {
+      ctx.lineTo(vertices[i].x, vertices[i].y);
+    }
+    ctx.closePath();
+  };
+
+  drawPath();
+  ctx.clip(); // Glow only shows inside the shape
+
+  drawPath();
+  ctx.shadowColor = config.glowColor;
+  ctx.shadowBlur = 200;
+  ctx.strokeStyle = config.glowColor;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
   ctx.restore();
 }
 
@@ -56,7 +69,7 @@ export function renderToCanvas(canvas, placed, scale = 1) {
   ctx.translate(-cx, -cy);
 
   for (const shape of placed) {
-    drawShape(ctx, shape.vertices, shape.position, shape.rotation, config.shapeColor);
+    drawShape(ctx, shape.vertices, shape.position, shape.rotation);
   }
 
   ctx.restore();

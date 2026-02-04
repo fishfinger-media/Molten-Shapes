@@ -1,10 +1,11 @@
 /**
- * Geometric placement - shapes touch edge-to-edge with no gaps
+ * Geometric placement - shapes touch edge-to-edge with no gaps and no overlaps.
+ * Contact point is passed between shapes so path edges meet exactly.
  */
 import { rotatePoint } from './shapeUtils.js';
 
 /**
- * Find leftmost and rightmost points of rotated shape (vertices in local coords)
+ * Find leftmost and rightmost points of rotated shape
  */
 function getExtents(vertices, angle) {
   let leftmost = { x: Infinity, y: 0 };
@@ -12,16 +13,15 @@ function getExtents(vertices, angle) {
 
   for (const v of vertices) {
     const r = rotatePoint(v, angle);
-    if (r.x < leftmost.x) leftmost = r;
-    if (r.x > rightmost.x) rightmost = r;
+    if (r.x < leftmost.x) leftmost = { ...r };
+    if (r.x > rightmost.x) rightmost = { ...r };
   }
 
   return { leftmost, rightmost };
 }
 
 /**
- * Place shapes in a row so they touch edge-to-edge.
- * Contact point is passed between shapes so there are no gaps.
+ * Place shapes so they touch at path edges - no gaps, no overlaps.
  */
 export function placeShapes(shapeDataList, order, rotations) {
   const placed = [];
@@ -35,7 +35,7 @@ export function placeShapes(shapeDataList, order, rotations) {
 
     const { leftmost, rightmost } = getExtents(vertices, angle);
 
-    // Position so leftmost point touches the contact point (no gaps)
+    // Position so leftmost point touches the contact point exactly
     const posX = contactX - leftmost.x;
     const posY = contactY - leftmost.y;
 
@@ -45,7 +45,6 @@ export function placeShapes(shapeDataList, order, rotations) {
       rotation: angle,
     });
 
-    // Next contact is at this shape's rightmost point
     contactX = posX + rightmost.x;
     contactY = posY + rightmost.y;
   }
