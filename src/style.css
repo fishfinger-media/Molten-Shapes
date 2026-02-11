@@ -145,6 +145,18 @@ body {
   cursor: pointer;
 }
 
+.debug-angle {
+  position: absolute;
+  bottom: 2rem;
+  left: 18rem;
+  font-size: 0.875rem;
+  color: #333;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  min-height: 1.5em;
+}
+
 .shape-wrap .debug-bounds {
   position: absolute;
   border: 5px solid red;

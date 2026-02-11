@@ -193,6 +193,7 @@ function buildShapeWrap(svgEl, index) {
 function selectShape(index) {
   selectedIndex = index;
   transformControls.classList.toggle('visible', index !== null);
+  updateDebugAngle();
   if (index !== null) {
     updateLayout();
     updateControlsPosition();
@@ -213,10 +214,27 @@ function getSelectedRect() {
   };
 }
 
+function updateDebugAngle() {
+  const el = document.getElementById('debug-angle');
+  if (!el) return;
+  if (selectedIndex == null) {
+    el.textContent = '';
+    return;
+  }
+  const rot = rotations[selectedIndex];
+  const norm = normalizeAngleDeg(rot);
+  const shapeId = SHAPES[selectedIndex]?.id ?? '?';
+  const liquidNote = shapeId === 'liquid' && isLiquidAt135Rotation(selectedIndex)
+    ? ' (liquid neg-margin)'
+    : '';
+  el.textContent = `${shapeId} · rotation: ${rot}° (normalized: ${norm}°)${liquidNote}`;
+}
+
 function updateControlsPosition() {
   if (selectedIndex == null) return;
   const rect = getSelectedRect();
   if (!rect || !boundsEl) return;
+  updateDebugAngle();
 
   transformControls.style.left = `${rect.left}px`;
   transformControls.style.top = `${rect.top}px`;
@@ -296,6 +314,14 @@ function contentBoundsToContainerOffsets(content, bw, bh, s, rDeg) {
   return samplesToOffsets(corners, bw, bh, s, rDeg);
 }
 
+// Liquid gets the negative-margin correction at 135° only (not -135°/225°, 45°, 90°, etc).
+// leftOffset/rightOffset are always min/max X after rotation, so we inset 25% from each side.
+function isLiquidAt135Rotation(shapeIndex) {
+  if (SHAPES[shapeIndex].id !== 'liquid') return false;
+  const rot = normalizeAngleDeg(rotations[shapeIndex]);
+  return Math.abs(rot - 135) < 0.01;
+}
+
 function updateLayout() {
   if (!shapeWraps.length) return;
 
@@ -339,6 +365,18 @@ function updateLayout() {
       scales[i],
       rotations[i],
     );
+  });
+
+  // Liquid at 45°-type rotations: remove 25% from both sides (50% total) for layout
+  // so it butts up to neighbors; keep the same center so positioning stays correct.
+  containerOffsets.forEach((o, i) => {
+    if (!isLiquidAt135Rotation(i)) return;
+    const width = o.rightOffset - o.leftOffset;
+    const inset = width * 0.25; // 25% from each side = 50% total
+    o.leftOffset += inset;
+    o.rightOffset -= inset;
+    if (o.leftPoint) o.leftPoint.x = o.leftOffset;
+    if (o.rightPoint) o.rightPoint.x = o.rightOffset;
   });
 
   // Keep all shapes on a common horizontal alignment (same vertical center)
