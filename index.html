@@ -7,6 +7,42 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute; left:-9999px; top:-9999px;">
+      <defs>
+        <filter id="inset-blue" x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceAlpha" operator="erode" radius="20" result="spreadAlpha"/>
+          <feGaussianBlur in="spreadAlpha" stdDeviation="26" result="blur"/>
+          <feComposite in="blur" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="innerShadow"/>
+          <feFlood flood-color="rgba(6,35,230,1)" flood-opacity="1" result="shadowColor"/>
+          <feComposite in="shadowColor" in2="innerShadow" operator="in" result="coloredShadow"/>
+          <feComposite in="coloredShadow" in2="SourceGraphic" operator="over"/>
+        </filter>
+        <filter id="inset-green" x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceAlpha" operator="erode" radius="20" result="spreadAlpha"/>
+          <feGaussianBlur in="spreadAlpha" stdDeviation="26" result="blur"/>
+          <feComposite in="blur" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="innerShadow"/>
+          <feFlood flood-color="rgba(0,229,110,1)" flood-opacity="1" result="shadowColor"/>
+          <feComposite in="shadowColor" in2="innerShadow" operator="in" result="coloredShadow"/>
+          <feComposite in="coloredShadow" in2="SourceGraphic" operator="over"/>
+        </filter>
+        <filter id="inset-yellow" x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceAlpha" operator="erode" radius="20" result="spreadAlpha"/>
+          <feGaussianBlur in="spreadAlpha" stdDeviation="26" result="blur"/>
+          <feComposite in="blur" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="innerShadow"/>
+          <feFlood flood-color="rgba(255,255,64,1)" flood-opacity="1" result="shadowColor"/>
+          <feComposite in="shadowColor" in2="innerShadow" operator="in" result="coloredShadow"/>
+          <feComposite in="coloredShadow" in2="SourceGraphic" operator="over"/>
+        </filter>
+        <filter id="inset-red" x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceAlpha" operator="erode" radius="20" result="spreadAlpha"/>
+          <feGaussianBlur in="spreadAlpha" stdDeviation="26" result="blur"/>
+          <feComposite in="blur" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="innerShadow"/>
+          <feFlood flood-color="rgba(255,128,126,1)" flood-opacity="1" result="shadowColor"/>
+          <feComposite in="shadowColor" in2="innerShadow" operator="in" result="coloredShadow"/>
+          <feComposite in="coloredShadow" in2="SourceGraphic" operator="over"/>
+        </filter>
+      </defs>
+    </svg>
     <div id="app">
       <div id="stage">
         <div id="shapes-container"></div>

@@ -1,4 +1,6 @@
 const BASE_HEIGHT = 240;
+const BACKGROUND_GREY = '#eaedef';
+const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
 
 const SHAPES = [
   { id: 'solid', src: '/Shapes/solid.svg', width: 366, height: 366 },
@@ -18,8 +20,7 @@ let shapeWraps = [];
 let shapeBaseSize = []; // per shape: { w, h } intrinsic size in px
 let shapeSamples = [];  // per shape: [{ x, y }...] sampled along SVG path in wrap-local pixels
 let shapeSnapAngles = []; // per shape: array of preferred rotation angles in degrees
-let scales = [1, 1, 1, 1];
-// Start the first shape (solid square) rotated 45deg so it appears as a diamond.
+let scales = [0.658, 1.450, 0.741, 1.075];
 let rotations = [45, 0, 0, 0];
 let selectedIndex = null;
 let boundsEl;
@@ -166,6 +167,14 @@ function buildShapeWrap(svgEl, index) {
   svgEl.setAttribute('width', String(w));
   svgEl.setAttribute('height', String(BASE_HEIGHT));
   if (!svgEl.getAttribute('xmlns')) svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+  const path = svgEl.querySelector('path');
+  if (path) {
+    path.setAttribute('fill', BACKGROUND_GREY);
+    const filterId = INSET_FILTERS[index];
+    if (filterId) path.setAttribute('filter', `url(#${filterId})`);
+  }
+
   wrap.appendChild(svgEl);
   shapeBaseSize[index] = { w, h: BASE_HEIGHT };
 
@@ -227,7 +236,12 @@ function updateDebugAngle() {
   const liquidNote = shapeId === 'liquid' && isLiquidAt135Rotation(selectedIndex)
     ? ' (liquid neg-margin)'
     : '';
-  el.textContent = `${shapeId} · rotation: ${rot}° (normalized: ${norm}°)${liquidNote}`;
+  const gasSide = getGasNegativeMarginSide(selectedIndex);
+  const gasNote = shapeId === 'gas' && gasSide
+    ? ` (gas neg-margin ${gasSide === 'both' ? 'both sides' : gasSide + ' side'})`
+    : '';
+  const scale = scales[selectedIndex];
+  el.textContent = `${shapeId} · rotation: ${rot}° (normalized: ${norm}°) · scale: ${scale}${liquidNote}${gasNote}`;
 }
 
 function updateControlsPosition() {
@@ -314,12 +328,33 @@ function contentBoundsToContainerOffsets(content, bw, bh, s, rDeg) {
   return samplesToOffsets(corners, bw, bh, s, rDeg);
 }
 
-// Liquid gets the negative-margin correction at 135° only (not -135°/225°, 45°, 90°, etc).
+// Liquid gets the negative-margin correction at 135° and -45° (not -135°/225°, 45°, 90°, etc).
 // leftOffset/rightOffset are always min/max X after rotation, so we inset 25% from each side.
 function isLiquidAt135Rotation(shapeIndex) {
   if (SHAPES[shapeIndex].id !== 'liquid') return false;
   const rot = normalizeAngleDeg(rotations[shapeIndex]);
-  return Math.abs(rot - 135) < 0.01;
+  return Math.abs(rot - 135) < 0.01 || Math.abs(rot - (-45)) < 0.01;
+}
+
+// Gas gets the negative-margin correction:
+// - 45° and -135°: one side only (right for 45°, left for -135°)
+// - 135° and -45°: both sides
+function isGasAtNegativeMarginRotation(shapeIndex) {
+  if (SHAPES[shapeIndex].id !== 'gas') return false;
+  const rot = normalizeAngleDeg(rotations[shapeIndex]);
+  return Math.abs(rot - 45) < 0.01 || Math.abs(rot - (-135)) < 0.01 
+    || Math.abs(rot - 135) < 0.01 || Math.abs(rot - (-45)) < 0.01;
+}
+
+// Returns 'right' for 45°, 'left' for -135°, 'both' for 135° and -45°, or null if not applicable.
+function getGasNegativeMarginSide(shapeIndex) {
+  if (!isGasAtNegativeMarginRotation(shapeIndex)) return null;
+  const rot = normalizeAngleDeg(rotations[shapeIndex]);
+  if (Math.abs(rot - 45) < 0.01) return 'right';
+  if (Math.abs(rot - (-135)) < 0.01) return 'left';
+  if (Math.abs(rot - 135) < 0.01) return 'both';
+  if (Math.abs(rot - (-45)) < 0.01) return 'both';
+  return null;
 }
 
 function updateLayout() {
@@ -377,6 +412,29 @@ function updateLayout() {
     o.rightOffset -= inset;
     if (o.leftPoint) o.leftPoint.x = o.leftOffset;
     if (o.rightPoint) o.rightPoint.x = o.rightOffset;
+  });
+
+  // Gas negative margin correction:
+  // - 45°: remove 13% from right side only
+  // - -135°: remove 13% from left side only
+  // - 135° and -45°: remove 13% from both sides
+  containerOffsets.forEach((o, i) => {
+    const side = getGasNegativeMarginSide(i);
+    if (!side) return;
+    const width = o.rightOffset - o.leftOffset;
+    const inset = width * 0.15; // 15% from one or both sides
+    if (side === 'right') {
+      o.rightOffset -= inset;
+      if (o.rightPoint) o.rightPoint.x = o.rightOffset;
+    } else if (side === 'left') {
+      o.leftOffset += inset;
+      if (o.leftPoint) o.leftPoint.x = o.leftOffset;
+    } else if (side === 'both') {
+      o.leftOffset += inset;
+      o.rightOffset -= inset;
+      if (o.leftPoint) o.leftPoint.x = o.leftOffset;
+      if (o.rightPoint) o.rightPoint.x = o.rightOffset;
+    }
   });
 
   // Keep all shapes on a common horizontal alignment (same vertical center)
@@ -610,30 +668,49 @@ function exportImage() {
       drawNext(idx + 1);
       return;
     }
-    const r = wrap.getBoundingClientRect();
-    const w = r.width * scale;
-    const h = r.height * scale;
-    const drawX = (parseFloat(wrap.style.left) || 0) * scale;
-    const drawY = (parseFloat(wrap.style.top) || 0) * scale;
+    const base = shapeBaseSize[idx];
+    if (!base) {
+      drawNext(idx + 1);
+      return;
+    }
+    const left = parseFloat(wrap.style.left) || 0;
+    const top = parseFloat(wrap.style.top) || 0;
+    const drawX = left * scale;
+    const drawY = top * scale;
     const s = scales[idx];
     const rot = rotations[idx];
+    const baseW = base.w;
+    const baseH = base.h;
 
     const svgClone = svg.cloneNode(true);
-    svgClone.setAttribute('width', String(w / s));
-    svgClone.setAttribute('height', String(h / s));
+    svgClone.setAttribute('width', String(baseW));
+    svgClone.setAttribute('height', String(baseH));
+
+    // Embed filter definition so it renders when SVG is loaded as standalone image
+    const filterId = INSET_FILTERS[idx];
+    const filterEl = document.getElementById(filterId);
+    if (filterEl) {
+      let defs = svgClone.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        svgClone.insertBefore(defs, svgClone.firstChild);
+      }
+      defs.appendChild(filterEl.cloneNode(true));
+    }
+
     const svgData = new XMLSerializer().serializeToString(svgClone);
     const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       ctx.save();
-      const originX = drawX + w / 2;
-      const originY = drawY + h / 2;
+      const originX = drawX + (baseW * scale) / 2;
+      const originY = drawY + (baseH * scale) / 2;
       ctx.translate(originX, originY);
       ctx.rotate((rot * Math.PI) / 180);
       ctx.scale(s, s);
       ctx.translate(-originX, -originY);
-      ctx.drawImage(img, drawX, drawY, w / s, h / s);
+      ctx.drawImage(img, drawX, drawY, baseW * scale, baseH * scale);
       ctx.restore();
       URL.revokeObjectURL(url);
       drawNext(idx + 1);
