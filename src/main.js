@@ -2,6 +2,17 @@ const BASE_HEIGHT = 240;
 const BACKGROUND_GREY = '#eaedef';
 const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
 
+// Shape glow colors (used for inner glow and for melt-overlay on the *next* shape)
+const SHAPE_GRADIENT_COLORS = [
+  'rgb(6, 35, 230)',   // solid blue
+  'rgb(0, 229, 110)',  // liquid green
+  'rgb(255, 255, 64)', // gas yellow
+  'rgb(255, 128, 126)', // plasma red
+];
+// Illustrator melt gradient: 0% = 100% color, 40% = 0% color, midpoint 8% (sharp falloff)
+// Slightly softer so the band is visible: 0% full, ~8% mid, 40% transparent
+const MELT_STOPS = [[0, 1], [0.08, 0.6], [0.25, 0.15], [0.4, 0]];
+
 const SHAPES = [
   { id: 'solid', src: '/Shapes/solid.svg', width: 366, height: 366 },
   { id: 'liquid', src: '/Shapes/liquid.svg', width: 520, height: 520 },
@@ -18,6 +29,7 @@ const HANDLE_NAMES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 let shapeWraps = [];
 let shapeBaseSize = []; // per shape: { w, h } intrinsic size in px
+let shapePinPoints = []; // per shape: { cx, cy } path bbox center in viewBox coords (gradient origin)
 let shapeSamples = [];  // per shape: [{ x, y }...] sampled along SVG path in wrap-local pixels
 let shapeSnapAngles = []; // per shape: array of preferred rotation angles in degrees
 let scales = [0.658, 1.450, 0.741, 1.075];
@@ -25,6 +37,7 @@ let rotations = [45, 0, 0, 0];
 let selectedIndex = null;
 let boundsEl;
 let handleEls = {};
+let showGradientDebug = false;
 
 function widthAtHeight(vw, vh, h) {
   return (vw / vh) * h;
@@ -36,6 +49,27 @@ async function fetchSVGContent(url) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, 'image/svg+xml');
   return doc.querySelector('svg');
+}
+
+/** Path center and bbox in viewBox coordinates — used for gradient pin point and line length. */
+function getPathPinPoint(svgEl) {
+  const path = svgEl.querySelector('path');
+  const viewBox = svgEl.getAttribute('viewBox');
+  const vb = viewBox
+    ? viewBox.split(/\s+/).map(Number)
+    : [0, 0, parseInt(svgEl.getAttribute('width'), 10) || 100, parseInt(svgEl.getAttribute('height'), 10) || 100];
+  let bbox;
+  try {
+    bbox = path && path.getBBox ? path.getBBox() : { x: vb[0], y: vb[1], width: vb[2] - vb[0], height: vb[3] - vb[1] };
+  } catch (_) {
+    bbox = { x: vb[0], y: vb[1], width: vb[2] - vb[0], height: vb[3] - vb[1] };
+  }
+  return {
+    cx: bbox.x + bbox.width / 2,
+    cy: bbox.y + bbox.height / 2,
+    width: bbox.width,
+    height: bbox.height,
+  };
 }
 
 function getShapeContentBounds(svgEl, wrapWidth, wrapHeight) {
@@ -168,11 +202,49 @@ function buildShapeWrap(svgEl, index) {
   svgEl.setAttribute('height', String(BASE_HEIGHT));
   if (!svgEl.getAttribute('xmlns')) svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
+  // Pin point = path bbox center in viewBox coords; gradient will emanate from here and not spin when shape rotates
+  shapePinPoints[index] = getPathPinPoint(svgEl);
+
   const path = svgEl.querySelector('path');
   if (path) {
+    // Base layer: white fill + inner glow (inset filter) — matches reference when overlay is off
     path.setAttribute('fill', 'white');
     const filterId = INSET_FILTERS[index];
     if (filterId) path.setAttribute('filter', `url(#${filterId})`);
+
+    // For now: overlay only on liquid (index 1) so we can get one shape right first
+    const isLiquid = SHAPES[index].id === 'liquid';
+    if (isLiquid) {
+      const gradientId = `shape-gradient-${index}`;
+      let defs = svgEl.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        svgEl.insertBefore(defs, svgEl.firstChild);
+      }
+      const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+      grad.setAttribute('id', gradientId);
+      grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+      grad.setAttribute('x1', String(shapePinPoints[index].cx));
+      grad.setAttribute('y1', String(shapePinPoints[index].cy));
+      grad.setAttribute('x2', String(shapePinPoints[index].cx + 1));
+      grad.setAttribute('y2', String(shapePinPoints[index].cy));
+      const color = SHAPE_GRADIENT_COLORS[index - 1]; // previous shape's glow color
+      MELT_STOPS.forEach(([offset, opacity]) => {
+        const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop.setAttribute('offset', String(offset));
+        stop.setAttribute('stop-color', color);
+        stop.setAttribute('stop-opacity', String(opacity));
+        grad.appendChild(stop);
+      });
+      defs.appendChild(grad);
+
+      const overlayPath = path.cloneNode(true);
+      overlayPath.setAttribute('fill', `url(#${gradientId})`);
+      overlayPath.removeAttribute('filter');
+      overlayPath.setAttribute('aria-hidden', 'true');
+      overlayPath.classList.add('melt-overlay');
+      path.parentNode.insertBefore(overlayPath, path.nextSibling);
+    }
   }
 
   wrap.appendChild(svgEl);
@@ -357,6 +429,145 @@ function getGasNegativeMarginSide(shapeIndex) {
   return null;
 }
 
+/** Convert a point from container coords to shape i's viewBox (for gradient pin from previous shape). */
+function containerToShapeViewBox(cx, cy, shapeIndex) {
+  const wrap = shapeWraps[shapeIndex];
+  const svgEl = wrap && wrap.querySelector('svg');
+  const base = shapeBaseSize[shapeIndex];
+  if (!wrap || !svgEl || !base) return null;
+  const vb = svgEl.getAttribute('viewBox');
+  const v = vb ? vb.split(/\s+/).map(Number) : [0, 0, base.w, base.h];
+  const vw = v[2] - v[0];
+  const vh = v[3] - v[1];
+  const left = parseFloat(wrap.style.left) || 0;
+  const top = parseFloat(wrap.style.top) || 0;
+  const px = cx - left;
+  const py = cy - top;
+  const thetaRad = (rotations[shapeIndex] * Math.PI) / 180;
+  const cos = Math.cos(thetaRad);
+  const sin = Math.sin(thetaRad);
+  const s = scales[shapeIndex];
+  const cw = base.w / 2;
+  const ch = base.h / 2;
+  const sx = cw + (1 / s) * ((px - cw) * cos + (py - ch) * sin);
+  const sy = ch + (1 / s) * (-(px - cw) * sin + (py - ch) * cos);
+  return { x: (sx / base.w) * vw + v[0], y: (sy / base.h) * vh + v[1] };
+}
+
+/** Updates gradient line: fixed in stage (no spin), start pinned to previous shape's touch point. */
+function updateShapeGradient(index, layout) {
+  if (index === 0) return;
+  // For now: only liquid (index 1) has the melt overlay
+  if (SHAPES[index].id !== 'liquid') return;
+  const wrap = shapeWraps[index];
+  const svgEl = wrap && wrap.querySelector('svg');
+  const grad = svgEl && svgEl.querySelector(`#shape-gradient-${index}`);
+  const pin = shapePinPoints[index];
+  if (!grad || !pin) return;
+
+  const base = shapeBaseSize[index];
+  const vb = svgEl.getAttribute('viewBox');
+  const v = vb ? vb.split(/\s+/).map(Number) : [0, 0, base.w, base.h];
+  const vw = v[2] - v[0];
+  const vh = v[3] - v[1];
+  const thetaRad = (rotations[index] * Math.PI) / 180;
+  const cos = Math.cos(thetaRad);
+  const sin = Math.sin(thetaRad);
+
+  const hw = pin.width / 2;
+  const hh = pin.height / 2;
+  const corners = [
+    { x: pin.cx - hw, y: pin.cy - hh },
+    { x: pin.cx + hw, y: pin.cy - hh },
+    { x: pin.cx + hw, y: pin.cy + hh },
+    { x: pin.cx - hw, y: pin.cy + hh },
+  ];
+  const stageX = (p) => p.x * cos - p.y * sin;
+
+  let x1, y1;
+  if (layout && layout.lefts != null && layout.tops != null && layout.minLeft != null && layout.minTop != null && layout.containerOffsets) {
+    const { lefts, tops, minLeft, minTop, containerOffsets } = layout;
+    const prev = containerOffsets[index - 1];
+    const prevBase = shapeBaseSize[index - 1];
+    const prevCenterY = (prev.topOffset + prev.bottomOffset) / 2;
+    const prevTheta = (rotations[index - 1] * Math.PI) / 180;
+    const prevCos = Math.cos(prevTheta);
+    const prevSin = Math.sin(prevTheta);
+    const prevS = scales[index - 1];
+    // Right-edge midpoint of previous shape: in its transformed space it's (rightOffset, centerY);
+    // convert to wrap content then to container (inverse of scale then rotate around center).
+    const dx = (1 / prevS) * (prev.rightOffset * prevCos + prevCenterY * prevSin);
+    const dy = (1 / prevS) * (-prev.rightOffset * prevSin + prevCenterY * prevCos);
+    const touchCx = lefts[index - 1] - minLeft + prevBase.w / 2 + dx;
+    const touchCy = tops[index - 1] - minTop + prevBase.h / 2 + dy;
+    const pinInViewBox = containerToShapeViewBox(touchCx, touchCy, index);
+    if (pinInViewBox) {
+      x1 = pinInViewBox.x;
+      y1 = pinInViewBox.y;
+    }
+  }
+  if (x1 == null) {
+    const leftCorner = corners.reduce((a, b) => (stageX(a) < stageX(b) ? a : b));
+    x1 = leftCorner.x;
+    y1 = leftCorner.y;
+  }
+
+  // Gradient line must go FROM the pin INTO the liquid so the 0–40% band hits the shape.
+  // "Right" in stage = (1,0); in liquid's viewBox that's (cos θ, -sin θ). (120° pointed away from the shape and was invisible.)
+  const stageDx = 1;
+  const stageDy = 0;
+  const lineLen = 1.2 * Math.max(pin.width, pin.height);
+  const dirInViewBoxX = stageDx * cos + stageDy * sin;
+  const dirInViewBoxY = -stageDx * sin + stageDy * cos;
+  let x2 = x1 + lineLen * dirInViewBoxX;
+  let y2 = y1 + lineLen * dirInViewBoxY;
+
+  if (!Number.isFinite(x1) || !Number.isFinite(y1) || !Number.isFinite(x2) || !Number.isFinite(y2)) {
+    x1 = pin.cx;
+    y1 = pin.cy;
+    x2 = pin.cx + lineLen * dirInViewBoxX;
+    y2 = pin.cy + lineLen * dirInViewBoxY;
+  }
+
+  grad.setAttribute('x1', x1);
+  grad.setAttribute('y1', y1);
+  grad.setAttribute('x2', x2);
+  grad.setAttribute('y2', y2);
+
+  if (showGradientDebug) {
+    let debugGrp = svgEl.querySelector(`#gradient-debug-${index}`);
+    if (!debugGrp) {
+      debugGrp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      debugGrp.setAttribute('id', `gradient-debug-${index}`);
+      debugGrp.setAttribute('aria-hidden', 'true');
+      svgEl.appendChild(debugGrp);
+    }
+    debugGrp.innerHTML = '';
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', 'rgba(255,0,0,0.8)');
+    line.setAttribute('stroke-width', 2);
+    debugGrp.appendChild(line);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x1);
+    circle.setAttribute('cy', y1);
+    circle.setAttribute('r', 8);
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('stroke', 'red');
+    circle.setAttribute('stroke-width', 2);
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `Pin (previous shape touch) viewBox: (${x1.toFixed(1)}, ${y1.toFixed(1)}) → (${x2.toFixed(1)}, ${y2.toFixed(1)})`;
+    circle.appendChild(title);
+    debugGrp.appendChild(circle);
+  } else {
+    const debugGrp = svgEl.querySelector(`#gradient-debug-${index}`);
+    if (debugGrp) debugGrp.remove();
+  }
+}
+
 function updateLayout() {
   if (!shapeWraps.length) return;
 
@@ -476,6 +687,9 @@ function updateLayout() {
     wrap.style.left = `${lefts[i] - minLeft}px`;
     wrap.style.top = `${tops[i] - minTop}px`;
   });
+
+  const layout = { lefts, tops, minLeft, minTop, containerOffsets };
+  shapeWraps.forEach((_, i) => updateShapeGradient(i, layout));
 
   if (selectedIndex !== null) {
     requestAnimationFrame(() => updateControlsPosition());
@@ -737,13 +951,11 @@ async function init() {
   updateLayout();
   requestAnimationFrame(ensureSamplesBuilt);
 
-  const showBoundsCheckbox = document.getElementById('show-bounds');
-  if (showBoundsCheckbox) {
-    showBoundsCheckbox.addEventListener('change', () => {
-      const visible = showBoundsCheckbox.checked;
-      shapeWraps.forEach((wrap) =>
-        wrap.classList.toggle('debug-bounds-visible', visible),
-      );
+  const showGradientDebugCheckbox = document.getElementById('show-gradient-debug');
+  if (showGradientDebugCheckbox) {
+    showGradientDebugCheckbox.addEventListener('change', () => {
+      showGradientDebug = showGradientDebugCheckbox.checked;
+      updateLayout();
     });
   }
 

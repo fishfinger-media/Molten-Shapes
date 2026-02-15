@@ -168,6 +168,13 @@ body {
   display: block;
 }
 
+.gradient-debug-help {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: #555;
+  max-width: 42ch;
+}
+
 #download-btn {
   position: absolute;
   bottom: 2rem;

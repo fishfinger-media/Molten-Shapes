@@ -52,9 +52,12 @@
         <div id="shapes-container"></div>
         <div id="transform-controls" aria-hidden="true"></div>
       </div>
-      <label id="debug-label" class="debug-toggle">
-        <input type="checkbox" id="show-bounds" /> Show bounds
+      <label class="debug-toggle">
+        <input type="checkbox" id="show-gradient-debug" /> Debug gradient
       </label>
+      <p id="gradient-debug-help" class="gradient-debug-help" aria-live="polite">
+        <strong>Liquid only.</strong> Debug: <strong>red circle</strong> = gradient start, <strong>red line</strong> = gradient direction (hover circle for coords). To fix it, answer: (1) <em>Where should the red circle be?</em> e.g. “on the left edge of the green shape where the blue diamond touches it”. (2) <em>How should the red line go?</em> e.g. “from that point straight to the right (horizontal on screen), not diagonal”.
+      </p>
       <output id="debug-angle" class="debug-angle" aria-live="polite"></output>
       <button type="button" id="download-btn">Download</button>
     </div>
