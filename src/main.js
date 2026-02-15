@@ -170,7 +170,7 @@ function buildShapeWrap(svgEl, index) {
 
   const path = svgEl.querySelector('path');
   if (path) {
-    path.setAttribute('fill', BACKGROUND_GREY);
+    path.setAttribute('fill', 'white');
     const filterId = INSET_FILTERS[index];
     if (filterId) path.setAttribute('filter', `url(#${filterId})`);
   }
@@ -647,8 +647,6 @@ function exportImage() {
   canvas.width = targetW;
   canvas.height = targetH;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#eaedef';
-  ctx.fillRect(0, 0, targetW, targetH);
 
   const drawNext = (idx) => {
     if (idx >= shapeWraps.length) {
