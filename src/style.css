@@ -108,6 +108,7 @@ body.is-panning * {
 }
 
 /* Bleed overlay: fixed circle; clip-path set in JS (debug sliders / debugCircleCx, debugCircleCy, debugCircleR) */
+/* mix-blend-mode: color so glow hue (e.g. yellow) doesn't mix with shape (e.g. green) into lime – stays yellow */
 .bleed-overlay-wrap {
   position: absolute;
   left: 0;
@@ -116,6 +117,7 @@ body.is-panning * {
   height: 0;
   overflow: hidden;
   pointer-events: none;
+
 }
 
 .bleed-overlay-inner {
