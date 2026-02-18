@@ -67,7 +67,8 @@ let layoutTops = [];
 let layoutMinLeft = 0;
 let layoutMinTop = 0;
 let layoutTotalHeight = 0;
-let layoutContainerOffsets = []; // per-shape { leftOffset, rightOffset, topOffset, bottomOffset } in wrap-local (rotated bbox)
+let layoutContainerOffsets = []; // per-shape, after liquid/gas layout insets (for layout)
+let layoutContainerOffsetsRaw = []; // per-shape, actual shape bbox before insets (for bleed alignment)
 
 // Debug: bleed circle position (tune with sliders; use output values in code)
 // Layer is expanded by R on all sides so the circle is never cut. Cx = offset from shape left edge (0 = left edge).
@@ -507,6 +508,14 @@ function updateLayout() {
     );
   });
 
+  // Store raw bbox (before liquid/gas insets) so bleed overlay aligns with actual shape
+  layoutContainerOffsetsRaw = containerOffsets.map((o) => ({
+    leftOffset: o.leftOffset,
+    rightOffset: o.rightOffset,
+    topOffset: o.topOffset,
+    bottomOffset: o.bottomOffset,
+  }));
+
   // Liquid at 45°-type rotations: remove 25% from both sides (50% total) for layout
   // so it butts up to neighbors; keep the same center so positioning stays correct.
   containerOffsets.forEach((o, i) => {
@@ -633,15 +642,16 @@ function updateShapeFilters() {
   });
 }
 
-// Bleed overlay layers: size and position from the shape's rotated bbox so the circle stays at the shape's left edge at any rotation.
+// Bleed overlay layers: size and position from the shape's actual rotated bbox (raw offsets).
+// Use layoutContainerOffsetsRaw so gas/liquid layout insets don't shift the bleed away from the shape.
+// Inner div uses only per-shape scale/rotate; group scale is applied by the parent (shapes-group), so we must not double-apply it here.
 function updateBleedOverlayPositions() {
-  const gs = groupScale / 100;
   shapeWraps.forEach((_, i) => {
     const layer = bleedOverlayWraps[i];
     const inner = bleedOverlayInner[i];
     if (!layer || !inner) return;
     const base = shapeBaseSize[i];
-    const off = layoutContainerOffsets[i];
+    const off = layoutContainerOffsetsRaw[i] || layoutContainerOffsets[i];
     if (!base || !off) return;
     const R = debugCircleRByShape[i] ?? debugCircleR; // per-shape radius (e.g. plasma 127)
     const wrapLeft = layoutLefts[i] - layoutMinLeft;
@@ -674,8 +684,8 @@ function updateBleedOverlayPositions() {
     layer.style.maskRepeat = 'no-repeat';
     layer.style.webkitMaskSize = '100% 100%';
     layer.style.webkitMaskRepeat = 'no-repeat';
-    const s = scales[i] * gs;
-    inner.style.transform = `scale(${s}) rotate(${rotations[i]}deg)`;
+    // Per-shape scale/rotate only; group scale is already applied by shapes-group so don't double-apply
+    inner.style.transform = `scale(${scales[i]}) rotate(${rotations[i]}deg)`;
     inner.style.transformOrigin = '50% 50%';
   });
 }
@@ -912,6 +922,97 @@ function getTotalHeight() {
   return Number.isFinite(h) ? h : BASE_HEIGHT;
 }
 
+// Draw one bleed overlay (feathered circle) to ctx for export; calls callback when done.
+// rasterScale: scale factor for high-res rasterization (smoother edges).
+function drawBleedOverlayToCanvas(ctx, idx, rasterScale, callback) {
+  const layer = bleedOverlayWraps[idx];
+  const off = layoutContainerOffsetsRaw[idx] || layoutContainerOffsets[idx];
+  const base = shapeBaseSize[idx];
+  if (!layer || !off || !base) {
+    callback();
+    return;
+  }
+  const rs = Math.max(1, rasterScale || 1);
+  const R = debugCircleRByShape[idx] ?? debugCircleR;
+  const wrapLeft = layoutLefts[idx] - layoutMinLeft;
+  const wrapTop = layoutTops[idx] - layoutMinTop;
+  const { leftOffset, rightOffset, topOffset, bottomOffset } = off;
+  const layerW = (rightOffset - leftOffset) + 2 * R;
+  const layerH = (bottomOffset - topOffset) + 2 * R;
+  const drawX_bleed = wrapLeft + leftOffset - R;
+  const drawY_bleed = wrapTop + topOffset - R;
+  const circleCyPct = debugCircleCyByShape[idx] ?? debugCircleCy;
+  const circleCx = layerW / 2 - base.w / 2 + leftOffset + debugCircleCx;
+  const circleCy = (circleCyPct / 100) * layerH;
+  const innerR = Math.max(0, R - BLEED_CIRCLE_FEATHER);
+
+  const overlaySvg = layer.querySelector('.shape-bleed');
+  if (!overlaySvg) {
+    callback();
+    return;
+  }
+  const svgClone = overlaySvg.cloneNode(true);
+  const rw = Math.round(base.w * rs);
+  const rh = Math.round(BASE_HEIGHT * rs);
+  svgClone.setAttribute('width', String(rw));
+  svgClone.setAttribute('height', String(rh));
+  const filterEl = document.getElementById(`inset-bleed-filter-${idx}`);
+  if (filterEl) {
+    let defs = svgClone.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svgClone.insertBefore(defs, svgClone.firstChild);
+    }
+    defs.appendChild(filterEl.cloneNode(true));
+  }
+  const svgData = new XMLSerializer().serializeToString(svgClone);
+  const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const lw = Math.round(layerW * rs);
+    const lh = Math.round(layerH * rs);
+    const offCtx = document.createElement('canvas');
+    offCtx.width = lw;
+    offCtx.height = lh;
+    const offCtx2D = offCtx.getContext('2d');
+    offCtx2D.imageSmoothingEnabled = true;
+    offCtx2D.imageSmoothingQuality = 'high';
+    const wx = layerW / 2 - base.w / 2;
+    const wy = layerH / 2 - BASE_HEIGHT / 2;
+    offCtx2D.save();
+    offCtx2D.translate(layerW / 2 * rs, layerH / 2 * rs);
+    offCtx2D.rotate((rotations[idx] * Math.PI) / 180);
+    offCtx2D.scale(scales[idx], scales[idx]);
+    offCtx2D.translate(-layerW / 2 * rs, -layerH / 2 * rs);
+    offCtx2D.drawImage(img, 0, 0, rw, rh, wx * rs, wy * rs, base.w * rs, BASE_HEIGHT * rs);
+    offCtx2D.restore();
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = lw;
+    maskCanvas.height = lh;
+    const mCtx = maskCanvas.getContext('2d');
+    const grad = mCtx.createRadialGradient(
+      circleCx * rs, circleCy * rs, 0,
+      circleCx * rs, circleCy * rs, R * rs
+    );
+    grad.addColorStop(0, 'white');
+    grad.addColorStop(innerR / R, 'white');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    mCtx.fillStyle = grad;
+    mCtx.fillRect(0, 0, lw, lh);
+    offCtx2D.globalCompositeOperation = 'destination-in';
+    offCtx2D.drawImage(maskCanvas, 0, 0);
+    ctx.drawImage(offCtx, 0, 0, lw, lh, drawX_bleed, drawY_bleed, layerW, layerH);
+    URL.revokeObjectURL(url);
+    callback();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    callback();
+  };
+  img.src = url;
+}
+
 function exportImage() {
   const totalW = getTotalWidth();
   const totalH = getTotalHeight();
@@ -934,6 +1035,11 @@ function exportImage() {
   canvas.width = paperW;
   canvas.height = paperH;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // Rasterize SVGs at higher resolution for smooth edges (min 2x, cap 8x)
+  const rasterScale = Math.min(8, Math.max(2, Math.max(scaleToExportX * gs, scaleToExportY * gs)));
 
   ctx.save();
   ctx.rect(0, 0, paperW, paperH);
@@ -979,8 +1085,10 @@ function exportImage() {
     const baseH = base.h;
 
     const svgClone = svg.cloneNode(true);
-    svgClone.setAttribute('width', String(baseW));
-    svgClone.setAttribute('height', String(baseH));
+    const rw = Math.round(baseW * rasterScale);
+    const rh = Math.round(baseH * rasterScale);
+    svgClone.setAttribute('width', String(rw));
+    svgClone.setAttribute('height', String(rh));
 
     const filterId = `inset-filter-${idx}`;
     const filterEl = document.getElementById(filterId);
@@ -1005,10 +1113,14 @@ function exportImage() {
       ctx.rotate((rot * Math.PI) / 180);
       ctx.scale(shapeScale, shapeScale);
       ctx.translate(-originX, -originY);
-      ctx.drawImage(img, drawX, drawY, baseW, baseH);
+      ctx.drawImage(img, 0, 0, rw, rh, drawX, drawY, baseW, baseH);
       ctx.restore();
       URL.revokeObjectURL(url);
-      drawNext(idx + 1);
+      if (glowEnabled && idx >= 1 && idx <= 3) {
+        drawBleedOverlayToCanvas(ctx, idx, rasterScale, () => drawNext(idx + 1));
+      } else {
+        drawNext(idx + 1);
+      }
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -1127,6 +1239,7 @@ async function init() {
       if (scaleValueEl) scaleValueEl.textContent = groupScale + '%';
       updateGroupTransform();
       updateShapeFilters();
+      updateBleedOverlayPositions(); // bleed inner scale uses gs so must update when group scale changes
     });
   }
 
@@ -1139,6 +1252,7 @@ async function init() {
       groupRotation = Number(rotationInput.value);
       if (rotationValueEl) rotationValueEl.textContent = groupRotation + '°';
       updateGroupTransform();
+      updateBleedOverlayPositions(); // keep bleed in sync when group transform changes
     });
   }
 

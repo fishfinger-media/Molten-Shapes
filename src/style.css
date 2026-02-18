@@ -1,6 +1,6 @@
-/* .debug-section {
+.debug-section {
   display: none;;
-} */
+}
 
 @font-face {
   font-family: 'Niveau Grotesk';
@@ -239,7 +239,7 @@ body.is-panning * {
 }
 
 /* Menu panel: light grey bar, black track, white thumb */
-#menu {
+#menu, #export-sidebar {
   width: 240px;
   background: #E9E9E9;
   border-radius: 16px;
