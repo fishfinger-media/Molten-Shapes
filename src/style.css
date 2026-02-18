@@ -417,6 +417,23 @@ body.is-panning * {
   word-break: break-all;
 }
 
+.glow-toggle .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.glow-toggle #glow-enabled {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
 #download-btn {
   margin-top: 0.25rem;
   align-self: flex-start;

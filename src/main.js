@@ -78,6 +78,7 @@ let debugCircleR = 111;   // radius in px (default for liquid/gas)
 let debugCircleRByShape = [111, 111, 111, 127]; // [unused, liquid, gas, plasma] radius per shape (plasma 127)
 // Glow colour per shape (0=blue, 1=green, 2=yellow, 3=red). This shape's colour bleeds into the next.
 let glowColorByShapeIndex = [0, 1, 2, 3]; // [solid, liquid, gas, plasma] → plasma red by default
+let glowEnabled = false; // off by default; toggles bleed overlay only (base shapes always have their glow)
 
 let panStartX = 0;
 let panStartY = 0;
@@ -1025,6 +1026,14 @@ function setFilterGlowColor(filterEl, rgb) {
   if (flood) flood.setAttribute('flood-color', rgb);
 }
 
+// Toggle only the bleed overlay (circles); base shapes always keep their glow filter.
+function updateGlowVisibility() {
+  [1, 2, 3].forEach((i) => {
+    const layer = bleedOverlayWraps[i];
+    if (layer) layer.style.display = glowEnabled ? '' : 'none';
+  });
+}
+
 // Apply glow colours: main shape i uses glowColorByShapeIndex[i]; bleed on shape i uses colour of shape i-1 (bleeds into this shape).
 function applyGlowColors() {
   SHAPES.forEach((_, i) => {
@@ -1096,6 +1105,7 @@ async function init() {
 
   updateLayout();
   updatePaperClass();
+  updateGlowVisibility(); // bleed overlay off by default
   requestAnimationFrame(ensureSamplesBuilt);
 
   const paperTypeSelect = document.getElementById('paper-type');
@@ -1129,6 +1139,15 @@ async function init() {
       groupRotation = Number(rotationInput.value);
       if (rotationValueEl) rotationValueEl.textContent = groupRotation + '°';
       updateGroupTransform();
+    });
+  }
+
+  const glowCheckbox = document.getElementById('glow-enabled');
+  if (glowCheckbox) {
+    glowCheckbox.checked = glowEnabled;
+    glowCheckbox.addEventListener('change', () => {
+      glowEnabled = glowCheckbox.checked;
+      updateGlowVisibility();
     });
   }
 
