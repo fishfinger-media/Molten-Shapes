@@ -5,7 +5,7 @@ const GLOW_PX = 10; // base glow thickness in screen pixels (scales at 0.5x with
 const GLOW_BLEED_FACTOR = 1.4; // bleed overlay glow = base glow × this (e.g. 1.4 = 40% thicker)
 const GLOW_VIEW_SCALE_POWER = 0.5; // glow scales at this power as paper shrinks/grows (0.5 = half the rate)
 const GLOW_REF_WIDTH = 1000; // reference paper width (px) at which effective glow = GLOW_PX
-// Bleed overlay colors by state: liquid=blue, gas=green, plasma=yellow (no bleed for solid)
+// Bleed overlay: !flipGlow = left side (liquid, gas, plasma); flipGlow = right side (solid, liquid, gas)
 const BLEED_FILTER_SOURCES = ['inset-blue', 'inset-green', 'inset-yellow']; // for shape indices 1, 2, 3
 // Glow colour options: this shape's glow bleeds into the next shape
 const GLOW_COLOR_NAMES = ['blue', 'green', 'yellow', 'red'];
@@ -83,6 +83,7 @@ let debugCircleRByShape = [111, 111, 111, 127]; // [unused, liquid, gas, plasma]
 // Glow colour per shape (0=blue, 1=green, 2=yellow, 3=red). This shape's colour bleeds into the next.
 let glowColorByShapeIndex = [0, 1, 2, 3]; // [solid, liquid, gas, plasma] → plasma red by default
 let glowEnabled = false; // off by default; toggles bleed overlay only (base shapes always have their glow)
+let flipGlow = false; // false = bleed on left (liquid, gas, plasma); true = bleed on right (solid, liquid, gas)
 
 let panStartX = 0;
 let panStartY = 0;
@@ -249,16 +250,13 @@ function buildShapeWrap(svgEl, index) {
   wrap.appendChild(shapeInner);
   shapeBaseSize[index] = { w, h: BASE_HEIGHT };
 
-  // Bleed overlay SVG (for non-solid): built here, caller will put it in a fixed clip-path layer so the circle doesn't rotate
-  let overlaySvg = null;
-  if (SHAPES[index].id !== 'solid') {
-    overlaySvg = svgEl.cloneNode(true);
-    overlaySvg.classList.add('shape-bleed');
-    const overlayPath = overlaySvg.querySelector('path');
-    if (overlayPath) {
-      overlayPath.setAttribute('fill', 'white');
-      overlayPath.setAttribute('filter', `url(#inset-bleed-filter-${index})`);
-    }
+  // Bleed overlay SVG for all shapes (used on left when !flipGlow for 1,2,3; on right when flipGlow for 0,1,2)
+  const overlaySvg = svgEl.cloneNode(true);
+  overlaySvg.classList.add('shape-bleed');
+  const overlayPath = overlaySvg.querySelector('path');
+  if (overlayPath) {
+    overlayPath.setAttribute('fill', 'white');
+    overlayPath.setAttribute('filter', `url(#inset-bleed-filter-${index})`);
   }
   wrap._bleedOverlaySvg = overlaySvg;
 
@@ -310,7 +308,7 @@ function updateShapeColorSidebar() {
   const shapeId = SHAPES[selectedIndex]?.id ?? 'shape';
   const label = shapeId.charAt(0).toUpperCase() + shapeId.slice(1);
   if (titleEl) titleEl.textContent = `${label} glow colour`;
-  if (hintEl) hintEl.textContent = 'This colour bleeds into the next shape.';
+  if (hintEl) hintEl.textContent = flipGlow ? 'This colour bleeds into the previous shape.' : 'This colour bleeds into the next shape.';
   const current = glowColorByShapeIndex[selectedIndex];
   buttons.forEach((btn) => {
     const colorIndex = parseInt(btn.dataset.color, 10);
@@ -643,8 +641,8 @@ function updateShapeFilters() {
     if (morph) morph.setAttribute('radius', String(Math.max(1, radius)));
     if (blur) blur.setAttribute('stdDeviation', String(Math.max(1, stdDev)));
 
-    // Bleed overlay filter (GLOW_BLEED_FACTOR × base glow) for liquid, gas, plasma
-    if (SHAPES[i].id === 'solid') return;
+    // Bleed overlay filter (GLOW_BLEED_FACTOR × base glow): indices 1,2,3 when !flipGlow; 0,1,2 when flipGlow
+    if ((!flipGlow && i === 0) || (flipGlow && i === 3)) return;
     const bleedFilterEl = document.getElementById(`inset-bleed-filter-${i}`);
     if (!bleedFilterEl) return;
     const bleedRadius = (effectiveBleedPx * viewBoxDim) / (BASE_HEIGHT * scales[i] * gsGlow);
@@ -686,8 +684,8 @@ function updateBleedOverlayPositions() {
       svgWrap.style.left = `${wx}px`;
       svgWrap.style.top = `${wy}px`;
     }
-    // Circle at left edge of rotated shape (feathered mask: solid to R-feather, then fade to R)
-    const circleCx = layerW / 2 - base.w / 2 + leftOffset + debugCircleCx;
+    // Circle at left or right edge of shape depending on flipGlow (feathered mask: solid to R-feather, then fade to R)
+    const circleCx = layerW / 2 - base.w / 2 + (flipGlow ? rightOffset - debugCircleCx : leftOffset + debugCircleCx);
     const circleCy = debugCircleCyByShape[i] ?? debugCircleCy; // per-shape Y %
     const innerR = Math.max(0, R - BLEED_CIRCLE_FEATHER); // solid up to here, then fade
     const maskValue = `radial-gradient(circle ${R}px at ${circleCx}px ${circleCy}%, white 0px, white ${innerR}px, transparent ${R}px)`;
@@ -960,7 +958,7 @@ function drawBleedOverlayToCanvas(ctx, idx, rasterScale, callback) {
   const drawX_bleed = wrapLeft + leftOffset - R;
   const drawY_bleed = wrapTop + topOffset - R;
   const circleCyPct = debugCircleCyByShape[idx] ?? debugCircleCy;
-  const circleCx = layerW / 2 - base.w / 2 + leftOffset + debugCircleCx;
+  const circleCx = layerW / 2 - base.w / 2 + (flipGlow ? rightOffset - debugCircleCx : leftOffset + debugCircleCx);
   const circleCy = (circleCyPct / 100) * layerH;
   const innerR = Math.max(0, R - BLEED_CIRCLE_FEATHER);
 
@@ -1134,7 +1132,8 @@ function exportImage() {
       ctx.drawImage(img, 0, 0, rw, rh, drawX, drawY, baseW, baseH);
       ctx.restore();
       URL.revokeObjectURL(url);
-      if (glowEnabled && idx >= 1 && idx <= 3) {
+      const bleedIndices = flipGlow ? [0, 1, 2] : [1, 2, 3];
+      if (glowEnabled && bleedIndices.includes(idx)) {
         drawBleedOverlayToCanvas(ctx, idx, rasterScale, () => drawNext(idx + 1));
       } else {
         drawNext(idx + 1);
@@ -1157,22 +1156,29 @@ function setFilterGlowColor(filterEl, rgb) {
 }
 
 // Toggle only the bleed overlay (circles); base shapes always keep their glow filter.
+// When !flipGlow show layers 1,2,3 (bleed on left); when flipGlow show 0,1,2 (bleed on right).
 function updateGlowVisibility() {
-  [1, 2, 3].forEach((i) => {
+  const indices = flipGlow ? [0, 1, 2] : [1, 2, 3];
+  [0, 1, 2, 3].forEach((i) => {
     const layer = bleedOverlayWraps[i];
-    if (layer) layer.style.display = glowEnabled ? '' : 'none';
+    if (layer) layer.style.display = glowEnabled && indices.includes(i) ? '' : 'none';
   });
 }
 
-// Apply glow colours: main shape i uses glowColorByShapeIndex[i]; bleed on shape i uses colour of shape i-1 (bleeds into this shape).
+// Apply glow colours: main shape i uses glowColorByShapeIndex[i].
+// Bleed on shape i: when !flipGlow uses colour of i-1 (left bleed); when flipGlow uses colour of i+1 (right bleed).
 function applyGlowColors() {
   SHAPES.forEach((_, i) => {
     const filterEl = document.getElementById(`inset-filter-${i}`);
     if (filterEl) setFilterGlowColor(filterEl, GLOW_COLOR_RGB[glowColorByShapeIndex[i]]);
   });
-  [1, 2, 3].forEach((i) => {
+  [0, 1, 2, 3].forEach((i) => {
     const bleedEl = document.getElementById(`inset-bleed-filter-${i}`);
-    if (bleedEl) setFilterGlowColor(bleedEl, GLOW_COLOR_RGB[glowColorByShapeIndex[i - 1]]);
+    if (!bleedEl) return;
+    const sourceIndex = flipGlow ? i + 1 : i - 1;
+    if (sourceIndex >= 0 && sourceIndex <= 3) {
+      setFilterGlowColor(bleedEl, GLOW_COLOR_RGB[glowColorByShapeIndex[sourceIndex]]);
+    }
   });
 }
 
@@ -1186,9 +1192,9 @@ function initShapeFilters() {
     clone.id = `inset-filter-${i}`;
     defs.appendChild(clone);
   });
-  // Bleed overlay filters (thicker glow) for liquid, gas, plasma only
-  [1, 2, 3].forEach((i) => {
-    const sourceId = BLEED_FILTER_SOURCES[i - 1];
+  // Bleed overlay filters for all 4 shapes (0 used when flipGlow; 1,2,3 when !flipGlow)
+  [0, 1, 2, 3].forEach((i) => {
+    const sourceId = i === 0 ? 'inset-blue' : BLEED_FILTER_SOURCES[i - 1];
     const baseFilter = document.getElementById(sourceId);
     if (!baseFilter) return;
     const clone = baseFilter.cloneNode(true);
@@ -1284,6 +1290,18 @@ async function init() {
     glowCheckbox.addEventListener('change', () => {
       glowEnabled = glowCheckbox.checked;
       updateGlowVisibility();
+    });
+  }
+
+  const flipGlowCheckbox = document.getElementById('flip-glow');
+  if (flipGlowCheckbox) {
+    flipGlowCheckbox.checked = flipGlow;
+    flipGlowCheckbox.addEventListener('change', () => {
+      flipGlow = flipGlowCheckbox.checked;
+      updateGlowVisibility();
+      applyGlowColors();
+      updateBleedOverlayPositions();
+      if (selectedIndex !== null) updateShapeColorSidebar();
     });
   }
 

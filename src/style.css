@@ -46,6 +46,7 @@ body {
   background: #fff;
   border-radius: 16px;
   display: flex;
+  outline: 0.5px solid #cecece;
   align-items: center;
   justify-content: center;
   position: relative;
@@ -231,10 +232,12 @@ body.is-panning * {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  z-index: 10000;
 }
 
 /* Menu panel: light grey bar, black track, white thumb */
-#menu, #export-sidebar {
+ 
+  #menu, #export-sidebar, .shape-color-sidebar {
   width: 240px;
   background: #E9E9E9;
   border-radius: 16px;
@@ -242,17 +245,10 @@ body.is-panning * {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+  
 }
 
-/* Second sidebar: glow colour for selected shape (below main menu) */
-.shape-color-sidebar {
-  width: 240px;
-  background: #E9E9E9;
-  border-radius: 16px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
-}
+
 
 .shape-color-sidebar.hidden {
   display: none;
@@ -335,6 +331,7 @@ body.is-panning * {
   background-image: url("data:image/svg+xml,%3Csvg width='7' height='7' viewBox='0 0 7 7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.67179 5.5694C4.15131 6.44301 2.85011 6.44301 2.32963 5.56941L0.182643 1.96578C-0.337837 1.09218 0.312763 0.000170525 1.35372 0.000170616L5.64769 0.000170992C6.68865 0.000171083 7.33925 1.09218 6.81877 1.96578L4.67179 5.5694Z' fill='%233C23E6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.6rem center;
+
 }
 
 /* Sliders: thin black track, white circle handle with black border (per design) */
@@ -412,21 +409,49 @@ body.is-panning * {
   word-break: break-all;
 }
 
+.glow-toggle + .glow-toggle {
+  margin-top: -1rem;
+
+}
+
 .glow-toggle .checkbox-label {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 24px;
   font-family: 'Niveau Grotesk', system-ui, sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
+  line-height: 24px;
   color: #1a1a1a;
   cursor: pointer;
 }
 
-.glow-toggle #glow-enabled {
-  width: 18px;
-  height: 18px;
+.glow-toggle .checkbox-label span {
+  line-height: 24px;
+}
+
+.glow-toggle input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  background-color: #fff;
+  border: 1px solid #cecece;
+  border-radius: 0.3rem;
   cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+}
+
+.glow-toggle input[type="checkbox"]:checked {
+  background-color: #4331e5;
+  border-color: #4331e5;
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='11' viewBox='0 0 14 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5.5L5 9.5L13 1.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
 
