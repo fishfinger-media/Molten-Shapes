@@ -48,15 +48,36 @@
       </defs>
     </svg>
     <div id="app">
-      <div id="stage">
-        <div id="shapes-container"></div>
-        <div id="transform-controls" aria-hidden="true"></div>
+      <div id="paper" role="img" aria-label="Paper canvas">
+        <div id="stage">
+          <div id="shapes-group">
+            <div id="shapes-container"></div>
+          </div>
+          <div id="transform-controls" aria-hidden="true"></div>
+        </div>
       </div>
-      <label id="debug-label" class="debug-toggle">
-        <input type="checkbox" id="show-bounds" /> Show bounds
-      </label>
-      <output id="debug-angle" class="debug-angle" aria-live="polite"></output>
-      <button type="button" id="download-btn">Download</button>
+      <aside id="menu" aria-label="Paper and export options">
+        <div class="menu-section">
+          <label for="paper-type">Paper Type</label>
+          <select id="paper-type" aria-label="Paper size and orientation">
+            <option value="a4-landscape">A4 Landscape</option>
+            <option value="a4-portrait">A4 Portrait</option>
+            <option value="a5-landscape">A5 Landscape</option>
+            <option value="a5-portrait">A5 Portrait</option>
+          </select>
+        </div>
+        <div class="menu-section">
+          <label for="scale">Scale</label>
+          <input type="range" id="scale" min="25" max="250" value="100" aria-label="Scale all shapes" />
+          <span id="scale-value" class="menu-value">100%</span>
+        </div>
+        <div class="menu-section">
+          <label for="rotation">Rotation</label>
+          <input type="range" id="rotation" min="-180" max="180" value="0" aria-label="Rotate all shapes" />
+          <span id="rotation-value" class="menu-value">0°</span>
+        </div>
+        <button type="button" id="download-btn">Download</button>
+      </aside>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

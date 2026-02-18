@@ -1,6 +1,7 @@
 const BASE_HEIGHT = 240;
 const BACKGROUND_GREY = '#eaedef';
 const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
+const GLOW_PX = 8; // fixed glow thickness in screen pixels
 
 const SHAPES = [
   { id: 'solid', src: '/Shapes/solid.svg', width: 366, height: 366 },
@@ -10,9 +11,21 @@ const SHAPES = [
 ];
 
 const container = document.getElementById('shapes-container');
+const shapesGroup = document.getElementById('shapes-group');
 const transformControls = document.getElementById('transform-controls');
 const stage = document.getElementById('stage');
+const paperEl = document.getElementById('paper');
 const downloadBtn = document.getElementById('download-btn');
+
+// 300 DPI: 1 inch = 25.4 mm, 300 px per inch → mm * (300/25.4) ≈ mm * 11.811
+const DPI = 300;
+const MM_TO_PX = DPI / 25.4;
+const PAPER_SPECS = {
+  'a4-landscape': { w: 297 * MM_TO_PX, h: 210 * MM_TO_PX },
+  'a4-portrait': { w: 210 * MM_TO_PX, h: 297 * MM_TO_PX },
+  'a5-landscape': { w: 210 * MM_TO_PX, h: 148 * MM_TO_PX },
+  'a5-portrait': { w: 148 * MM_TO_PX, h: 210 * MM_TO_PX },
+};
 
 const HANDLE_NAMES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
@@ -25,6 +38,22 @@ let rotations = [45, 0, 0, 0];
 let selectedIndex = null;
 let boundsEl;
 let handleEls = {};
+
+let paperType = 'a4-landscape';
+let groupScale = 100;
+let groupRotation = 0;
+let groupTranslateX = 0;
+let groupTranslateY = 0;
+
+let panStartX = 0;
+let panStartY = 0;
+let panStartTranslateX = 0;
+let panStartTranslateY = 0;
+let isPanning = false;
+let hasPanned = false;
+let ignoreNextShapeClick = false; // set when user dragged; prevents click from showing transforms
+const PAN_THRESHOLD_PX = 5;
+let panStartShapeWrap = null;
 
 function widthAtHeight(vw, vh, h) {
   return (vw / vh) * h;
@@ -171,8 +200,7 @@ function buildShapeWrap(svgEl, index) {
   const path = svgEl.querySelector('path');
   if (path) {
     path.setAttribute('fill', 'white');
-    const filterId = INSET_FILTERS[index];
-    if (filterId) path.setAttribute('filter', `url(#${filterId})`);
+    path.setAttribute('filter', `url(#inset-filter-${index})`);
   }
 
   wrap.appendChild(svgEl);
@@ -193,6 +221,10 @@ function buildShapeWrap(svgEl, index) {
 
   wrap.addEventListener('click', (e) => {
     if (e.target.closest('.handle') || e.target.closest('.rotate-handle')) return;
+    if (ignoreNextShapeClick) {
+      ignoreNextShapeClick = false;
+      return;
+    }
     selectShape(index);
   });
 
@@ -477,9 +509,94 @@ function updateLayout() {
     wrap.style.top = `${tops[i] - minTop}px`;
   });
 
+  updateGroupTransform();
+  updateShapeFilters();
+
   if (selectedIndex !== null) {
     requestAnimationFrame(() => updateControlsPosition());
   }
+}
+
+// Update filter radius/stdDeviation so glow is fixed GLOW_PX regardless of shape size/scale
+function updateShapeFilters() {
+  const defs = document.querySelector('svg defs');
+  if (!defs) return;
+  const gs = groupScale / 100;
+  shapeWraps.forEach((_, i) => {
+    const filterEl = document.getElementById(`inset-filter-${i}`);
+    if (!filterEl) return;
+    const viewBoxDim = Math.max(SHAPES[i].width, SHAPES[i].height);
+    const s = scales[i] * gs;
+    const radius = (GLOW_PX * viewBoxDim) / (BASE_HEIGHT * s);
+    const stdDev = radius * (26 / 20);
+    const morph = filterEl.querySelector('feMorphology');
+    const blur = filterEl.querySelector('feGaussianBlur');
+    if (morph) morph.setAttribute('radius', String(Math.max(1, radius)));
+    if (blur) blur.setAttribute('stdDeviation', String(Math.max(1, stdDev)));
+  });
+}
+
+function updateGroupTransform() {
+  if (!shapesGroup) return;
+  shapesGroup.style.transform =
+    `translate(${groupTranslateX}px, ${groupTranslateY}px) scale(${groupScale / 100}) rotate(${groupRotation}deg)`;
+}
+
+function updatePaperClass() {
+  if (!paperEl) return;
+  paperEl.classList.toggle('portrait', paperType === 'a4-portrait' || paperType === 'a5-portrait');
+}
+
+function onPaperPointerDown(e) {
+  if (e.button !== 0) return;
+  if (e.target.closest('#transform-controls')) return;
+  isPanning = true;
+  hasPanned = false;
+  panStartShapeWrap = e.target.closest('.shape-wrap');
+  document.body.classList.add('is-panning');
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panStartTranslateX = groupTranslateX;
+  panStartTranslateY = groupTranslateY;
+}
+
+function onPaperPointerMove(e) {
+  if (!isPanning) return;
+  const dx = e.clientX - panStartX;
+  const dy = e.clientY - panStartY;
+  if (!hasPanned && (dx * dx + dy * dy > PAN_THRESHOLD_PX * PAN_THRESHOLD_PX)) {
+    hasPanned = true;
+  }
+  if (hasPanned) {
+    groupTranslateX = panStartTranslateX + dx;
+    groupTranslateY = panStartTranslateY + dy;
+    updateGroupTransform();
+  }
+}
+
+function onPaperPointerUp() {
+  if (isPanning) {
+    document.body.classList.remove('is-panning');
+    if (hasPanned) {
+      ignoreNextShapeClick = true; // click will still fire on shape; ignore it so transforms don't show
+    } else {
+      if (panStartShapeWrap != null) {
+        const idx = shapeWraps.indexOf(panStartShapeWrap);
+        if (idx !== -1) selectShape(idx);
+      } else {
+        selectShape(null);
+      }
+    }
+    panStartShapeWrap = null;
+  }
+  isPanning = false;
+}
+
+function initPaperPan() {
+  if (!paperEl) return;
+  paperEl.addEventListener('mousedown', onPaperPointerDown);
+  document.addEventListener('mousemove', onPaperPointerMove);
+  document.addEventListener('mouseup', onPaperPointerUp);
 }
 
 function ensureSamplesBuilt() {
@@ -639,22 +756,43 @@ function exportImage() {
   const totalW = getTotalWidth();
   const totalH = getTotalHeight();
   if (totalW <= 0) return;
-  const targetW = 2000;
-  const scale = targetW / totalW;
-  const targetH = Math.round(totalH * scale);
+
+  const spec = PAPER_SPECS[paperType];
+  const paperW = Math.round(spec.w);
+  const paperH = Math.round(spec.h);
+  const gs = groupScale / 100;
+  const rad = (groupRotation * Math.PI) / 180;
+
+  // Map UI paper viewport to export pixels (match what user sees, don't fit shapes)
+  const paperRect = paperEl.getBoundingClientRect();
+  const scaleToExportX = paperW / paperRect.width;
+  const scaleToExportY = paperH / paperRect.height;
+  const txExport = groupTranslateX * scaleToExportX;
+  const tyExport = groupTranslateY * scaleToExportY;
 
   const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
+  canvas.width = paperW;
+  canvas.height = paperH;
   const ctx = canvas.getContext('2d');
+
+  ctx.save();
+  ctx.rect(0, 0, paperW, paperH);
+  ctx.clip();
+  // Replicate UI: center of paper = transform origin, then pan, rotate, scale
+  ctx.translate(paperW / 2, paperH / 2);
+  ctx.translate(txExport, tyExport);
+  ctx.rotate(rad);
+  ctx.scale(scaleToExportX * gs, scaleToExportY * gs);
+  ctx.translate(-totalW / 2, -totalH / 2);
 
   const drawNext = (idx) => {
     if (idx >= shapeWraps.length) {
+      ctx.restore();
       canvas.toBlob((blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'molten-shapes.png';
+        a.download = `molten-shapes-${paperType}-300dpi.png`;
         a.click();
         URL.revokeObjectURL(url);
       }, 'image/png');
@@ -673,9 +811,9 @@ function exportImage() {
     }
     const left = parseFloat(wrap.style.left) || 0;
     const top = parseFloat(wrap.style.top) || 0;
-    const drawX = left * scale;
-    const drawY = top * scale;
-    const s = scales[idx];
+    const drawX = left;
+    const drawY = top;
+    const shapeScale = scales[idx];
     const rot = rotations[idx];
     const baseW = base.w;
     const baseH = base.h;
@@ -684,8 +822,7 @@ function exportImage() {
     svgClone.setAttribute('width', String(baseW));
     svgClone.setAttribute('height', String(baseH));
 
-    // Embed filter definition so it renders when SVG is loaded as standalone image
-    const filterId = INSET_FILTERS[idx];
+    const filterId = `inset-filter-${idx}`;
     const filterEl = document.getElementById(filterId);
     if (filterEl) {
       let defs = svgClone.querySelector('defs');
@@ -702,13 +839,13 @@ function exportImage() {
     const img = new Image();
     img.onload = () => {
       ctx.save();
-      const originX = drawX + (baseW * scale) / 2;
-      const originY = drawY + (baseH * scale) / 2;
+      const originX = drawX + baseW / 2;
+      const originY = drawY + baseH / 2;
       ctx.translate(originX, originY);
       ctx.rotate((rot * Math.PI) / 180);
-      ctx.scale(s, s);
+      ctx.scale(shapeScale, shapeScale);
       ctx.translate(-originX, -originY);
-      ctx.drawImage(img, drawX, drawY, baseW * scale, baseH * scale);
+      ctx.drawImage(img, drawX, drawY, baseW, baseH);
       ctx.restore();
       URL.revokeObjectURL(url);
       drawNext(idx + 1);
@@ -723,8 +860,22 @@ function exportImage() {
   drawNext(0);
 }
 
+function initShapeFilters() {
+  const defs = document.querySelector('svg defs');
+  if (!defs) return;
+  SHAPES.forEach((_, i) => {
+    const baseFilter = document.getElementById(INSET_FILTERS[i]);
+    if (!baseFilter) return;
+    const clone = baseFilter.cloneNode(true);
+    clone.id = `inset-filter-${i}`;
+    defs.appendChild(clone);
+  });
+}
+
 async function init() {
   initTransformControls();
+  initPaperPan();
+  initShapeFilters();
 
   for (let i = 0; i < SHAPES.length; i++) {
     const shape = SHAPES[i];
@@ -735,20 +886,46 @@ async function init() {
   }
 
   updateLayout();
+  updatePaperClass();
   requestAnimationFrame(ensureSamplesBuilt);
 
-  const showBoundsCheckbox = document.getElementById('show-bounds');
-  if (showBoundsCheckbox) {
-    showBoundsCheckbox.addEventListener('change', () => {
-      const visible = showBoundsCheckbox.checked;
-      shapeWraps.forEach((wrap) =>
-        wrap.classList.toggle('debug-bounds-visible', visible),
-      );
+  const paperTypeSelect = document.getElementById('paper-type');
+  if (paperTypeSelect) {
+    paperTypeSelect.value = paperType;
+    paperTypeSelect.addEventListener('change', () => {
+      paperType = paperTypeSelect.value;
+      updatePaperClass();
+    });
+  }
+
+  const scaleInput = document.getElementById('scale');
+  const scaleValueEl = document.getElementById('scale-value');
+  if (scaleInput) {
+    scaleInput.value = groupScale;
+    if (scaleValueEl) scaleValueEl.textContent = groupScale + '%';
+    scaleInput.addEventListener('input', () => {
+      groupScale = Number(scaleInput.value);
+      if (scaleValueEl) scaleValueEl.textContent = groupScale + '%';
+      updateGroupTransform();
+      updateShapeFilters();
+    });
+  }
+
+  const rotationInput = document.getElementById('rotation');
+  const rotationValueEl = document.getElementById('rotation-value');
+  if (rotationInput) {
+    rotationInput.value = groupRotation;
+    if (rotationValueEl) rotationValueEl.textContent = groupRotation + '°';
+    rotationInput.addEventListener('input', () => {
+      groupRotation = Number(rotationInput.value);
+      if (rotationValueEl) rotationValueEl.textContent = groupRotation + '°';
+      updateGroupTransform();
     });
   }
 
   document.addEventListener('click', (e) => {
     if (selectedIndex == null) return;
+    if (e.target.closest('#menu')) return;
     if (
       e.target.closest('.shape-wrap') ||
       e.target.closest('.handle') ||
@@ -757,12 +934,11 @@ async function init() {
     ) {
       return;
     }
-    if (e.target.closest('#download-btn')) return;
     selectShape(null);
   });
 }
 
-downloadBtn.addEventListener('click', exportImage);
+if (downloadBtn) downloadBtn.addEventListener('click', exportImage);
 window.addEventListener('resize', () => {
   updateLayout();
   if (selectedIndex !== null) updateControlsPosition();

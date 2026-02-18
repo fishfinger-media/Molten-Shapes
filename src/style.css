@@ -1,3 +1,10 @@
+@font-face {
+  font-family: 'Niveau Grotesk';
+  src: url('/fonts/NiveauGrotesk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
 *,
 *::before,
 *::after {
@@ -8,26 +15,69 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background-color: transparent;
-  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #F7F7F7;
+  font-family: 'Niveau Grotesk', system-ui, -apple-system, sans-serif;
 }
 
 #app {
-  min-height: 100%;
+  height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 1.5rem;
   position: relative;
+}
+
+/* Paper container: scales to fit viewport while preserving A4/A5 aspect ratio */
+#paper {
+  /* Use width as driver; height follows via aspect-ratio. Size fits within both constraints. */
+  width: min(calc(100vw - 280px), calc(80vh * 297 / 210));
+  height: auto;
+  aspect-ratio: 297 / 210; /* A4 landscape: wider than tall */
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+}
+
+#paper:active {
+  cursor: grabbing;
+}
+
+body.is-panning,
+body.is-panning * {
+  cursor: grabbing !important;
+}
+
+#paper.portrait {
+  width: min(calc(100vw - 280px), calc(80vh * 210 / 297));
+  aspect-ratio: 210 / 297; /* A4/A5 portrait: taller than wide */
 }
 
 #stage {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+#shapes-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 50% 50%;
 }
 
 #shapes-container {
@@ -129,34 +179,6 @@ body {
   pointer-events: none;
 }
 
-.debug-toggle {
-  position: absolute;
-  bottom: 2rem;
-  left: 10rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: #333;
-  cursor: pointer;
-}
-
-.debug-toggle input {
-  cursor: pointer;
-}
-
-.debug-angle {
-  position: absolute;
-  bottom: 2rem;
-  left: 18rem;
-  font-size: 0.875rem;
-  color: #333;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  min-height: 1.5em;
-}
-
 .shape-wrap .debug-bounds {
   position: absolute;
   border: 5px solid red;
@@ -168,18 +190,115 @@ body {
   display: block;
 }
 
-#download-btn {
+/* Menu panel: top right, matches design – light grey bar, black track, white thumb */
+#menu {
   position: absolute;
-  bottom: 2rem;
-  left: 2rem;
-  padding: 0.625rem 1.25rem;
-  font-size: 1rem;
+  top: 1.5rem;
+  right: 1.5rem;
+  width: 240px;
+  background: #E9E9E9;
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+#menu label {
+  display: block;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 0.4rem;
+}
+
+#paper-type {
+  width: 100%;
+  padding: 0.5rem 2rem 0.5rem 0.65rem;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  background: #fff;
+  border: none;
+  border-radius: 4px;
+  color: #1a1a1a;
+  cursor: pointer;
+  appearance: none;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='7' height='7' viewBox='0 0 7 7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.67179 5.5694C4.15131 6.44301 2.85011 6.44301 2.32963 5.56941L0.182643 1.96578C-0.337837 1.09218 0.312763 0.000170525 1.35372 0.000170616L5.64769 0.000170992C6.68865 0.000171083 7.33925 1.09218 6.81877 1.96578L4.67179 5.5694Z' fill='%233C23E6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+}
+
+/* Sliders: thin black track, white circle handle with black border (per design) */
+#scale,
+#rotation {
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+#scale::-webkit-slider-runnable-track,
+#rotation::-webkit-slider-runnable-track {
+  height: 1px;
+  background: #1a1a1a;
+}
+
+#scale::-moz-range-track,
+#rotation::-moz-range-track {
+  height: 1px;
+  background: #1a1a1a;
+}
+
+#scale::-webkit-slider-thumb,
+#rotation::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #1a1a1a;
+  margin-top: -6px;
+  cursor: pointer;
+}
+
+#scale::-moz-range-thumb,
+#rotation::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #1a1a1a;
+  cursor: pointer;
+}
+
+.menu-value {
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  color: #444;
+  margin-top: 0.15rem;
+}
+
+#download-btn {
+  margin-top: 0.25rem;
+  align-self: flex-start;
+  vertical-align: middle;
+  padding: 16px;
+  border-radius: 8px;
+  line-height: 1;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
   font-weight: 500;
   color: #fff;
   background-color: #4331e5;
   border: none;
-  border-radius: 8px;
   cursor: pointer;
+  outline: none;
 }
 
 #download-btn:hover {
