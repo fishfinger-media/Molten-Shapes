@@ -1,7 +1,13 @@
 const BASE_HEIGHT = 240;
 const BACKGROUND_GREY = '#eaedef';
 const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
-const GLOW_PX = 8; // fixed glow thickness in screen pixels
+const GLOW_PX = 10; // fixed glow thickness in screen pixels
+const GLOW_BLEED_PX = GLOW_PX + 4; // bleed overlay glow thickness (4px thicker)
+// Bleed overlay colors by state: liquid=blue, gas=green, plasma=yellow (no bleed for solid)
+const BLEED_FILTER_SOURCES = ['inset-blue', 'inset-green', 'inset-yellow']; // for shape indices 1, 2, 3
+const BLEED_CIRCLE_DIAMETER = 222; // px; circle masks the overlay (2 * default R)
+const BLEED_CIRCLE_R = BLEED_CIRCLE_DIAMETER / 2;
+const BLEED_CIRCLE_FEATHER = 60;   // px; soft edge (fade from solid to transparent)
 
 const SHAPES = [
   { id: 'solid', src: '/Shapes/solid.svg', width: 366, height: 366 },
@@ -30,6 +36,8 @@ const PAPER_SPECS = {
 const HANDLE_NAMES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 let shapeWraps = [];
+let bleedOverlayWraps = []; // [undefined, el1, el2, el3] - fixed clip-path layer for overlay (no transform)
+let bleedOverlayInner = []; // inner div with scale/rotate for overlay SVG
 let shapeBaseSize = []; // per shape: { w, h } intrinsic size in px
 let shapeSamples = [];  // per shape: [{ x, y }...] sampled along SVG path in wrap-local pixels
 let shapeSnapAngles = []; // per shape: array of preferred rotation angles in degrees
@@ -44,6 +52,22 @@ let groupScale = 100;
 let groupRotation = 0;
 let groupTranslateX = 0;
 let groupTranslateY = 0;
+
+// Layout values for bleed overlay positioning (set in updateLayout)
+let layoutLefts = [];
+let layoutTops = [];
+let layoutMinLeft = 0;
+let layoutMinTop = 0;
+let layoutTotalHeight = 0;
+let layoutContainerOffsets = []; // per-shape { leftOffset, rightOffset, topOffset, bottomOffset } in wrap-local (rotated bbox)
+
+// Debug: bleed circle position (tune with sliders; use output values in code)
+// Layer is expanded by R on all sides so the circle is never cut. Cx = offset from shape left edge (0 = left edge).
+let debugCircleCx = 0;    // px from shape left edge (circle center in layer = R + this)
+let debugCircleCy = 50;   // % of layer height (50 = center) – fallback when per-shape not set
+let debugCircleCyByShape = [50, 50, 42, 50]; // [unused, liquid, gas, plasma] Y % per shape
+let debugCircleR = 111;   // radius in px (default for liquid/gas)
+let debugCircleRByShape = [111, 111, 111, 127]; // [unused, liquid, gas, plasma] radius per shape (plasma 127)
 
 let panStartX = 0;
 let panStartY = 0;
@@ -203,8 +227,25 @@ function buildShapeWrap(svgEl, index) {
     path.setAttribute('filter', `url(#inset-filter-${index})`);
   }
 
-  wrap.appendChild(svgEl);
+  const shapeInner = document.createElement('div');
+  shapeInner.className = 'shape-inner';
+  shapeInner.appendChild(svgEl);
+
+  wrap.appendChild(shapeInner);
   shapeBaseSize[index] = { w, h: BASE_HEIGHT };
+
+  // Bleed overlay SVG (for non-solid): built here, caller will put it in a fixed clip-path layer so the circle doesn't rotate
+  let overlaySvg = null;
+  if (SHAPES[index].id !== 'solid') {
+    overlaySvg = svgEl.cloneNode(true);
+    overlaySvg.classList.add('shape-bleed');
+    const overlayPath = overlaySvg.querySelector('path');
+    if (overlayPath) {
+      overlayPath.setAttribute('fill', 'white');
+      overlayPath.setAttribute('filter', `url(#inset-bleed-filter-${index})`);
+    }
+  }
+  wrap._bleedOverlaySvg = overlaySvg;
 
   // Precompute preferred snap angles for this shape based on its path.
   buildSnapAnglesForShape(index, svgEl);
@@ -504,6 +545,18 @@ function updateLayout() {
   container.style.width = `${totalWidth}px`;
   container.style.height = `${totalHeight}px`;
 
+  layoutLefts = lefts;
+  layoutTops = tops;
+  layoutMinLeft = minLeft;
+  layoutMinTop = minTop;
+  layoutTotalHeight = totalHeight;
+  layoutContainerOffsets = containerOffsets.map((o) => ({
+    leftOffset: o.leftOffset,
+    rightOffset: o.rightOffset,
+    topOffset: o.topOffset,
+    bottomOffset: o.bottomOffset,
+  }));
+
   shapeWraps.forEach((wrap, i) => {
     wrap.style.left = `${lefts[i] - minLeft}px`;
     wrap.style.top = `${tops[i] - minTop}px`;
@@ -511,6 +564,7 @@ function updateLayout() {
 
   updateGroupTransform();
   updateShapeFilters();
+  updateBleedOverlayPositions();
 
   if (selectedIndex !== null) {
     requestAnimationFrame(() => updateControlsPosition());
@@ -533,7 +587,81 @@ function updateShapeFilters() {
     const blur = filterEl.querySelector('feGaussianBlur');
     if (morph) morph.setAttribute('radius', String(Math.max(1, radius)));
     if (blur) blur.setAttribute('stdDeviation', String(Math.max(1, stdDev)));
+
+    // Bleed overlay filter (4px thicker glow) for liquid, gas, plasma
+    if (SHAPES[i].id === 'solid') return;
+    const bleedFilterEl = document.getElementById(`inset-bleed-filter-${i}`);
+    if (!bleedFilterEl) return;
+    const bleedRadius = (GLOW_BLEED_PX * viewBoxDim) / (BASE_HEIGHT * s);
+    const bleedStdDev = bleedRadius * (26 / 20);
+    const bleedMorph = bleedFilterEl.querySelector('feMorphology');
+    const bleedBlur = bleedFilterEl.querySelector('feGaussianBlur');
+    if (bleedMorph) bleedMorph.setAttribute('radius', String(Math.max(1, bleedRadius)));
+    if (bleedBlur) bleedBlur.setAttribute('stdDeviation', String(Math.max(1, bleedStdDev)));
   });
+}
+
+// Bleed overlay layers: size and position from the shape's rotated bbox so the circle stays at the shape's left edge at any rotation.
+function updateBleedOverlayPositions() {
+  const gs = groupScale / 100;
+  shapeWraps.forEach((_, i) => {
+    const layer = bleedOverlayWraps[i];
+    const inner = bleedOverlayInner[i];
+    if (!layer || !inner) return;
+    const base = shapeBaseSize[i];
+    const off = layoutContainerOffsets[i];
+    if (!base || !off) return;
+    const R = debugCircleRByShape[i] ?? debugCircleR; // per-shape radius (e.g. plasma 127)
+    const wrapLeft = layoutLefts[i] - layoutMinLeft;
+    const wrapTop = layoutTops[i] - layoutMinTop;
+    const { leftOffset, rightOffset, topOffset, bottomOffset } = off;
+    // Layer sized to rotated bbox + 2*R so circle is never cut
+    const layerW = (rightOffset - leftOffset) + 2 * R;
+    const layerH = (bottomOffset - topOffset) + 2 * R;
+    layer.style.left = `${wrapLeft + leftOffset - R}px`;
+    layer.style.top = `${wrapTop + topOffset - R}px`;
+    layer.style.width = `${layerW}px`;
+    layer.style.height = `${layerH}px`;
+    // SVG wrapper: position so shape center is at layer center (for correct scale/rotate origin)
+    const svgWrap = layer.querySelector('.bleed-overlay-svg-wrap');
+    if (svgWrap) {
+      const wx = layerW / 2 - base.w / 2;
+      const wy = layerH / 2 - BASE_HEIGHT / 2;
+      svgWrap.style.left = `${wx}px`;
+      svgWrap.style.top = `${wy}px`;
+    }
+    // Circle at left edge of rotated shape (feathered mask: solid to R-feather, then fade to R)
+    const circleCx = layerW / 2 - base.w / 2 + leftOffset + debugCircleCx;
+    const circleCy = debugCircleCyByShape[i] ?? debugCircleCy; // per-shape Y %
+    const innerR = Math.max(0, R - BLEED_CIRCLE_FEATHER); // solid up to here, then fade
+    const maskValue = `radial-gradient(circle ${R}px at ${circleCx}px ${circleCy}%, white 0px, white ${innerR}px, transparent ${R}px)`;
+    layer.style.clipPath = '';
+    layer.style.maskImage = maskValue;
+    layer.style.webkitMaskImage = maskValue;
+    layer.style.maskSize = '100% 100%';
+    layer.style.maskRepeat = 'no-repeat';
+    layer.style.webkitMaskSize = '100% 100%';
+    layer.style.webkitMaskRepeat = 'no-repeat';
+    const s = scales[i] * gs;
+    inner.style.transform = `scale(${s}) rotate(${rotations[i]}deg)`;
+    inner.style.transformOrigin = '50% 50%';
+  });
+}
+
+function updateDebugCircleOutput() {
+  const el = document.getElementById('debug-circle-output');
+  if (!el) return;
+  const rLiquid = debugCircleRByShape[1] ?? debugCircleR;
+  const innerR = Math.max(0, rLiquid - BLEED_CIRCLE_FEATHER);
+  el.textContent = `r liquid/gas ${rLiquid}px, plasma ${debugCircleRByShape[3]}px, feather ${BLEED_CIRCLE_FEATHER}px (solid 0→${innerR}px)`;
+  el.title = [
+    `Feather ${BLEED_CIRCLE_FEATHER}px. Radius: liquid ${debugCircleRByShape[1]}, gas ${debugCircleRByShape[2]}, plasma ${debugCircleRByShape[3]}.`,
+    'Y %: liquid ' + debugCircleCyByShape[1] + ', gas ' + debugCircleCyByShape[2] + ', plasma ' + debugCircleCyByShape[3],
+    'Use in code:',
+    `  debugCircleCx = ${debugCircleCx};`,
+    `  debugCircleCyByShape = [50, ${debugCircleCyByShape[1]}, ${debugCircleCyByShape[2]}, ${debugCircleCyByShape[3]}];`,
+    `  debugCircleRByShape = [111, ${debugCircleRByShape[1]}, ${debugCircleRByShape[2]}, ${debugCircleRByShape[3]}];`,
+  ].join('\n');
 }
 
 function updateGroupTransform() {
@@ -870,6 +998,15 @@ function initShapeFilters() {
     clone.id = `inset-filter-${i}`;
     defs.appendChild(clone);
   });
+  // Bleed overlay filters (thicker glow) for liquid, gas, plasma only
+  [1, 2, 3].forEach((i) => {
+    const sourceId = BLEED_FILTER_SOURCES[i - 1];
+    const baseFilter = document.getElementById(sourceId);
+    if (!baseFilter) return;
+    const clone = baseFilter.cloneNode(true);
+    clone.id = `inset-bleed-filter-${i}`;
+    defs.appendChild(clone);
+  });
 }
 
 async function init() {
@@ -883,6 +1020,28 @@ async function init() {
     const wrap = buildShapeWrap(svgEl, i);
     container.appendChild(wrap);
     shapeWraps.push(wrap);
+
+    // Bleed overlay in a separate layer: layer expanded by radius so circle is never cut
+    if (wrap._bleedOverlaySvg) {
+      const layer = document.createElement('div');
+      layer.className = 'bleed-overlay-wrap';
+      layer.dataset.index = String(i);
+      layer.setAttribute('aria-hidden', 'true');
+      const inner = document.createElement('div');
+      inner.className = 'bleed-overlay-inner';
+      const svgWrap = document.createElement('div');
+      svgWrap.className = 'bleed-overlay-svg-wrap';
+      svgWrap.appendChild(wrap._bleedOverlaySvg);
+      inner.appendChild(svgWrap);
+      layer.appendChild(inner);
+      container.appendChild(layer);
+      bleedOverlayWraps[i] = layer;
+      bleedOverlayInner[i] = inner;
+      delete wrap._bleedOverlaySvg;
+    } else {
+      bleedOverlayWraps[i] = null;
+      bleedOverlayInner[i] = null;
+    }
   }
 
   updateLayout();
@@ -922,6 +1081,54 @@ async function init() {
       updateGroupTransform();
     });
   }
+
+  // Debug: bleed circle position sliders (output values for use in code)
+  function applyDebugCircleSliders() {
+    updateBleedOverlayPositions();
+    updateDebugCircleOutput();
+  }
+  const debugCx = document.getElementById('debug-circle-cx');
+  const debugR = document.getElementById('debug-circle-r');
+  if (debugCx) {
+    debugCx.value = debugCircleCx;
+    document.getElementById('debug-circle-cx-value').textContent = debugCircleCx;
+    debugCx.addEventListener('input', () => {
+      debugCircleCx = Number(debugCx.value);
+      document.getElementById('debug-circle-cx-value').textContent = debugCircleCx;
+      applyDebugCircleSliders();
+    });
+  }
+  const cyShapeIds = [
+    null,
+    { input: 'debug-circle-cy-liquid', value: 'debug-circle-cy-liquid-value', index: 1 },
+    { input: 'debug-circle-cy-gas', value: 'debug-circle-cy-gas-value', index: 2 },
+    { input: 'debug-circle-cy-plasma', value: 'debug-circle-cy-plasma-value', index: 3 },
+  ];
+  cyShapeIds.forEach((entry) => {
+    if (!entry) return;
+    const inputEl = document.getElementById(entry.input);
+    const valueEl = document.getElementById(entry.value);
+    if (!inputEl || !valueEl) return;
+    inputEl.value = debugCircleCyByShape[entry.index];
+    valueEl.textContent = debugCircleCyByShape[entry.index];
+    inputEl.addEventListener('input', () => {
+      debugCircleCyByShape[entry.index] = Number(inputEl.value);
+      valueEl.textContent = debugCircleCyByShape[entry.index];
+      applyDebugCircleSliders();
+    });
+  });
+  if (debugR) {
+    debugR.value = debugCircleR;
+    document.getElementById('debug-circle-r-value').textContent = debugCircleR;
+    debugR.addEventListener('input', () => {
+      debugCircleR = Number(debugR.value);
+      debugCircleRByShape[1] = debugCircleR; // liquid
+      debugCircleRByShape[2] = debugCircleR; // gas (plasma stays 127)
+      document.getElementById('debug-circle-r-value').textContent = debugCircleR;
+      applyDebugCircleSliders();
+    });
+  }
+  updateDebugCircleOutput();
 
   document.addEventListener('click', (e) => {
     if (selectedIndex == null) return;

@@ -1,3 +1,7 @@
+.debug-section {
+  display: none;;
+}
+
 @font-face {
   font-family: 'Niveau Grotesk';
   src: url('/fonts/NiveauGrotesk-Regular.woff2') format('woff2');
@@ -97,9 +101,43 @@ body.is-panning * {
   cursor: pointer;
 }
 
+.shape-inner {
+  position: relative;
+  display: inline-block;
+}
+
 .shape-wrap svg {
   display: block;
   vertical-align: middle;
+}
+
+/* Bleed overlay: fixed circle; clip-path set in JS (debug sliders / debugCircleCx, debugCircleCy, debugCircleR) */
+.bleed-overlay-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bleed-overlay-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+
+.bleed-overlay-svg-wrap {
+  position: absolute;
+  /* left/top set in JS to (debugCircleR) so shape aligns with wrap and circle has room */
+}
+
+.bleed-overlay-inner .shape-bleed {
+  display: block;
 }
 
 #transform-controls {
@@ -282,6 +320,28 @@ body.is-panning * {
   font-size: 0.875rem;
   color: #444;
   margin-top: 0.15rem;
+}
+
+.debug-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ccc;
+}
+
+.debug-section .menu-section-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.debug-output {
+  display: block;
+  margin-top: 0.5rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: #333;
+  word-break: break-all;
 }
 
 #download-btn {

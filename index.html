@@ -68,7 +68,7 @@
         </div>
         <div class="menu-section">
           <label for="scale">Scale</label>
-          <input type="range" id="scale" min="25" max="250" value="100" aria-label="Scale all shapes" />
+          <input type="range" id="scale" min="25" max="350" value="100" aria-label="Scale all shapes" />
           <span id="scale-value" class="menu-value">100%</span>
         </div>
         <div class="menu-section">
@@ -77,6 +77,25 @@
           <span id="rotation-value" class="menu-value">0°</span>
         </div>
         <button type="button" id="download-btn">Download</button>
+        <div class="menu-section debug-section" aria-label="Bleed circle position debug">
+          <span class="menu-section-label">Bleed circle (debug)</span>
+          <label for="debug-circle-cx">Circle X (px)</label>
+          <input type="range" id="debug-circle-cx" min="0" max="400" value="0" aria-label="Circle center X" />
+          <span id="debug-circle-cx-value" class="menu-value">0</span>
+          <label for="debug-circle-cy-liquid">Liquid Y (%)</label>
+          <input type="range" id="debug-circle-cy-liquid" min="0" max="100" value="50" aria-label="Liquid circle Y" />
+          <span id="debug-circle-cy-liquid-value" class="menu-value">50</span>
+          <label for="debug-circle-cy-gas">Gas Y (%)</label>
+          <input type="range" id="debug-circle-cy-gas" min="0" max="100" value="42" aria-label="Gas circle Y" />
+          <span id="debug-circle-cy-gas-value" class="menu-value">42</span>
+          <label for="debug-circle-cy-plasma">Plasma Y (%)</label>
+          <input type="range" id="debug-circle-cy-plasma" min="0" max="100" value="50" aria-label="Plasma circle Y" />
+          <span id="debug-circle-cy-plasma-value" class="menu-value">50</span>
+          <label for="debug-circle-r">Radius (px)</label>
+          <input type="range" id="debug-circle-r" min="50" max="200" value="111" aria-label="Circle radius" />
+          <span id="debug-circle-r-value" class="menu-value">111</span>
+          <output id="debug-circle-output" class="debug-output" aria-live="polite"></output>
+        </div>
       </aside>
     </div>
     <script type="module" src="/src/main.js"></script>
