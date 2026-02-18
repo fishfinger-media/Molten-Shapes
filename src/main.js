@@ -35,10 +35,11 @@ const downloadBtn = document.getElementById('download-btn');
 const DPI = 300;
 const MM_TO_PX = DPI / 25.4;
 const PAPER_SPECS = {
-  'a4-landscape': { w: 297 * MM_TO_PX, h: 210 * MM_TO_PX },
+  landscape: { w: 3000, h: 3000 * (9 / 16) },
+  portrait: { w: 3000 * (9 / 16), h: 3000 },
+  square: { w: 3000, h: 3000 },
   'a4-portrait': { w: 210 * MM_TO_PX, h: 297 * MM_TO_PX },
-  'a5-landscape': { w: 210 * MM_TO_PX, h: 148 * MM_TO_PX },
-  'a5-portrait': { w: 148 * MM_TO_PX, h: 210 * MM_TO_PX },
+  'a4-landscape': { w: 297 * MM_TO_PX, h: 210 * MM_TO_PX },
 };
 
 const HANDLE_NAMES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
@@ -55,7 +56,7 @@ let selectedIndex = null;
 let boundsEl;
 let handleEls = {};
 
-let paperType = 'a4-landscape';
+let paperType = 'landscape';
 let groupScale = 100;
 let groupRotation = 0;
 let groupTranslateX = 0;
@@ -714,7 +715,11 @@ function updateGroupTransform() {
 
 function updatePaperClass() {
   if (!paperEl) return;
-  paperEl.classList.toggle('portrait', paperType === 'a4-portrait' || paperType === 'a5-portrait');
+  const spec = PAPER_SPECS[paperType];
+  if (spec) {
+    paperEl.style.setProperty('--paper-aspect', String(spec.w / spec.h));
+  }
+  paperEl.classList.toggle('portrait', spec && spec.h > spec.w);
 }
 
 function onPaperPointerDown(e) {

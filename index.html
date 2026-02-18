@@ -59,12 +59,13 @@
       <div class="sidebars">
       <aside id="menu" aria-label="Paper and export options">
         <div class="menu-section">
-          <label for="paper-type">Paper Type</label>
-          <select id="paper-type" aria-label="Paper size and orientation">
-            <option value="a4-landscape">A4 Landscape</option>
+          <label for="paper-type">Sizes</label>
+          <select id="paper-type" aria-label="Canvas size">
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+            <option value="square">Square</option>
             <option value="a4-portrait">A4 Portrait</option>
-            <option value="a5-landscape">A5 Landscape</option>
-            <option value="a5-portrait">A5 Portrait</option>
+            <option value="a4-landscape">A4 Landscape</option>
           </select>
         </div>
         <div class="menu-section">
@@ -106,7 +107,7 @@
       <aside id="shape-color-sidebar" aria-label="Glow colour for selected shape" class="shape-color-sidebar hidden">
         <div class="menu-section">
           <span class="menu-section-label" id="shape-color-sidebar-title">Glow colour</span>
-          <p class="shape-color-sidebar-hint" id="shape-color-sidebar-hint">This colour bleeds into the next shape.</p>
+
           <div class="shape-color-options" role="group" aria-label="Glow colour options">
             <button type="button" class="shape-color-btn" data-color="0" aria-pressed="false" title="Blue"><span class="shape-color-swatch" style="background: rgba(6,35,230,1);"></span><span>Blue</span></button>
             <button type="button" class="shape-color-btn" data-color="1" aria-pressed="false" title="Green"><span class="shape-color-swatch" style="background: rgba(0,229,110,1);"></span><span>Green</span></button>
