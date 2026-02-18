@@ -56,6 +56,7 @@
           <div id="transform-controls" aria-hidden="true"></div>
         </div>
       </div>
+      <div class="sidebars">
       <aside id="menu" aria-label="Paper and export options">
         <div class="menu-section">
           <label for="paper-type">Paper Type</label>
@@ -97,6 +98,19 @@
           <output id="debug-circle-output" class="debug-output" aria-live="polite"></output>
         </div>
       </aside>
+      <aside id="shape-color-sidebar" aria-label="Glow colour for selected shape" class="shape-color-sidebar hidden">
+        <div class="menu-section">
+          <span class="menu-section-label" id="shape-color-sidebar-title">Glow colour</span>
+          <p class="shape-color-sidebar-hint" id="shape-color-sidebar-hint">This colour bleeds into the next shape.</p>
+          <div class="shape-color-options" role="group" aria-label="Glow colour options">
+            <button type="button" class="shape-color-btn" data-color="0" aria-pressed="false" title="Blue"><span class="shape-color-swatch" style="background: rgba(6,35,230,1);"></span><span>Blue</span></button>
+            <button type="button" class="shape-color-btn" data-color="1" aria-pressed="false" title="Green"><span class="shape-color-swatch" style="background: rgba(0,229,110,1);"></span><span>Green</span></button>
+            <button type="button" class="shape-color-btn" data-color="2" aria-pressed="false" title="Yellow"><span class="shape-color-swatch" style="background: rgba(255,255,64,1);"></span><span>Yellow</span></button>
+            <button type="button" class="shape-color-btn" data-color="3" aria-pressed="false" title="Red"><span class="shape-color-swatch" style="background: rgba(255,128,126,1);"></span><span>Red</span></button>
+          </div>
+        </div>
+      </aside>
+      </div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -1,6 +1,6 @@
-.debug-section {
+/* .debug-section {
   display: none;;
-}
+} */
 
 @font-face {
   font-family: 'Niveau Grotesk';
@@ -228,11 +228,18 @@ body.is-panning * {
   display: block;
 }
 
-/* Menu panel: top right, matches design – light grey bar, black track, white thumb */
-#menu {
+/* Sidebars: main menu + shape colour (when a shape is selected) */
+.sidebars {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Menu panel: light grey bar, black track, white thumb */
+#menu {
   width: 240px;
   background: #E9E9E9;
   border-radius: 16px;
@@ -241,6 +248,72 @@ body.is-panning * {
   flex-direction: column;
   gap: 1.25rem;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+/* Second sidebar: glow colour for selected shape (below main menu) */
+.shape-color-sidebar {
+  width: 240px;
+  background: #E9E9E9;
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.shape-color-sidebar.hidden {
+  display: none;
+}
+
+.shape-color-sidebar .menu-section-label {
+  display: block;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 0.25rem;
+}
+
+.shape-color-sidebar-hint {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 0 0 0.75rem 0;
+}
+
+.shape-color-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.shape-color-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  color: #1a1a1a;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.shape-color-btn:hover {
+  border-color: #1a1a1a;
+}
+
+.shape-color-btn[aria-pressed="true"] {
+  border-color: #4331e5;
+  box-shadow: 0 0 0 2px rgba(67, 49, 229, 0.3);
+}
+
+.shape-color-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.15);
 }
 
 #menu label {

@@ -5,6 +5,14 @@ const GLOW_PX = 10; // fixed glow thickness in screen pixels
 const GLOW_BLEED_PX = GLOW_PX + 4; // bleed overlay glow thickness (4px thicker)
 // Bleed overlay colors by state: liquid=blue, gas=green, plasma=yellow (no bleed for solid)
 const BLEED_FILTER_SOURCES = ['inset-blue', 'inset-green', 'inset-yellow']; // for shape indices 1, 2, 3
+// Glow colour options: this shape's glow bleeds into the next shape
+const GLOW_COLOR_NAMES = ['blue', 'green', 'yellow', 'red'];
+const GLOW_COLOR_RGB = [
+  'rgba(6,35,230,1)',
+  'rgba(0,229,110,1)',
+  'rgba(255,255,64,1)',
+  'rgba(255,128,126,1)',
+];
 const BLEED_CIRCLE_DIAMETER = 222; // px; circle masks the overlay (2 * default R)
 const BLEED_CIRCLE_R = BLEED_CIRCLE_DIAMETER / 2;
 const BLEED_CIRCLE_FEATHER = 60;   // px; soft edge (fade from solid to transparent)
@@ -68,6 +76,8 @@ let debugCircleCy = 50;   // % of layer height (50 = center) – fallback when p
 let debugCircleCyByShape = [50, 50, 42, 50]; // [unused, liquid, gas, plasma] Y % per shape
 let debugCircleR = 111;   // radius in px (default for liquid/gas)
 let debugCircleRByShape = [111, 111, 111, 127]; // [unused, liquid, gas, plasma] radius per shape (plasma 127)
+// Glow colour per shape (0=blue, 1=green, 2=yellow, 3=red). This shape's colour bleeds into the next.
+let glowColorByShapeIndex = [0, 1, 2, 3]; // [solid, liquid, gas, plasma] → plasma red by default
 
 let panStartX = 0;
 let panStartY = 0;
@@ -276,10 +286,31 @@ function selectShape(index) {
   selectedIndex = index;
   transformControls.classList.toggle('visible', index !== null);
   updateDebugAngle();
+  const colorSidebar = document.getElementById('shape-color-sidebar');
+  if (colorSidebar) {
+    colorSidebar.classList.toggle('hidden', index === null);
+    if (index !== null) updateShapeColorSidebar();
+  }
   if (index !== null) {
     updateLayout();
     updateControlsPosition();
   }
+}
+
+function updateShapeColorSidebar() {
+  const titleEl = document.getElementById('shape-color-sidebar-title');
+  const hintEl = document.getElementById('shape-color-sidebar-hint');
+  const buttons = document.querySelectorAll('.shape-color-btn');
+  if (selectedIndex == null) return;
+  const shapeId = SHAPES[selectedIndex]?.id ?? 'shape';
+  const label = shapeId.charAt(0).toUpperCase() + shapeId.slice(1);
+  if (titleEl) titleEl.textContent = `${label} glow colour`;
+  if (hintEl) hintEl.textContent = 'This colour bleeds into the next shape.';
+  const current = glowColorByShapeIndex[selectedIndex];
+  buttons.forEach((btn) => {
+    const colorIndex = parseInt(btn.dataset.color, 10);
+    btn.setAttribute('aria-pressed', colorIndex === current ? 'true' : 'false');
+  });
 }
 
 function getSelectedRect() {
@@ -988,6 +1019,24 @@ function exportImage() {
   drawNext(0);
 }
 
+function setFilterGlowColor(filterEl, rgb) {
+  if (!filterEl) return;
+  const flood = filterEl.querySelector('feFlood[result="shadowColor"]') || filterEl.querySelector('feFlood');
+  if (flood) flood.setAttribute('flood-color', rgb);
+}
+
+// Apply glow colours: main shape i uses glowColorByShapeIndex[i]; bleed on shape i uses colour of shape i-1 (bleeds into this shape).
+function applyGlowColors() {
+  SHAPES.forEach((_, i) => {
+    const filterEl = document.getElementById(`inset-filter-${i}`);
+    if (filterEl) setFilterGlowColor(filterEl, GLOW_COLOR_RGB[glowColorByShapeIndex[i]]);
+  });
+  [1, 2, 3].forEach((i) => {
+    const bleedEl = document.getElementById(`inset-bleed-filter-${i}`);
+    if (bleedEl) setFilterGlowColor(bleedEl, GLOW_COLOR_RGB[glowColorByShapeIndex[i - 1]]);
+  });
+}
+
 function initShapeFilters() {
   const defs = document.querySelector('svg defs');
   if (!defs) return;
@@ -1007,6 +1056,7 @@ function initShapeFilters() {
     clone.id = `inset-bleed-filter-${i}`;
     defs.appendChild(clone);
   });
+  applyGlowColors();
 }
 
 async function init() {
@@ -1130,9 +1180,19 @@ async function init() {
   }
   updateDebugCircleOutput();
 
+  document.querySelectorAll('.shape-color-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (selectedIndex == null) return;
+      const colorIndex = parseInt(btn.dataset.color, 10);
+      glowColorByShapeIndex[selectedIndex] = colorIndex;
+      applyGlowColors();
+      updateShapeColorSidebar();
+    });
+  });
+
   document.addEventListener('click', (e) => {
     if (selectedIndex == null) return;
-    if (e.target.closest('#menu')) return;
+    if (e.target.closest('#menu') || e.target.closest('#shape-color-sidebar')) return;
     if (
       e.target.closest('.shape-wrap') ||
       e.target.closest('.handle') ||
