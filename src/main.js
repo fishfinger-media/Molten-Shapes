@@ -1,8 +1,10 @@
 const BASE_HEIGHT = 240;
 const BACKGROUND_GREY = '#eaedef';
 const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
-const GLOW_PX = 10; // fixed glow thickness in screen pixels
-const GLOW_BLEED_PX = GLOW_PX + 4; // bleed overlay glow thickness (4px thicker)
+const GLOW_PX = 10; // base glow thickness in screen pixels (scales at 0.5x with view)
+const GLOW_BLEED_FACTOR = 1.4; // bleed overlay glow = base glow × this (e.g. 1.4 = 40% thicker)
+const GLOW_VIEW_SCALE_POWER = 0.5; // glow scales at this power as paper shrinks/grows (0.5 = half the rate)
+const GLOW_REF_WIDTH = 1000; // reference paper width (px) at which effective glow = GLOW_PX
 // Bleed overlay colors by state: liquid=blue, gas=green, plasma=yellow (no bleed for solid)
 const BLEED_FILTER_SOURCES = ['inset-blue', 'inset-green', 'inset-yellow']; // for shape indices 1, 2, 3
 // Glow colour options: this shape's glow bleeds into the next shape
@@ -613,28 +615,39 @@ function updateLayout() {
   }
 }
 
-// Update filter radius/stdDeviation so glow is fixed GLOW_PX regardless of shape size/scale
+// Update filter radius/stdDeviation; glow scales at 0.5x with paper view size (shrinks/grows with canvas)
 function updateShapeFilters() {
   const defs = document.querySelector('svg defs');
   if (!defs) return;
   const gs = groupScale / 100;
+  const paperRect = paperEl ? paperEl.getBoundingClientRect() : null;
+  const viewScale = paperRect && paperRect.width > 0
+    ? paperRect.width / GLOW_REF_WIDTH
+    : 1;
+  const glowScaleFactor = Math.pow(viewScale, GLOW_VIEW_SCALE_POWER);
+  const effectiveGlowPx = GLOW_PX * glowScaleFactor;
+  const effectiveBleedPx = effectiveGlowPx * GLOW_BLEED_FACTOR;
+
+  // Apply same 0.5 power to group scale so glow thins when scale < 100% and thickens when > 100%
+  const gsGlow = Math.pow(Math.max(0.01, gs), GLOW_VIEW_SCALE_POWER);
+
   shapeWraps.forEach((_, i) => {
     const filterEl = document.getElementById(`inset-filter-${i}`);
     if (!filterEl) return;
     const viewBoxDim = Math.max(SHAPES[i].width, SHAPES[i].height);
     const s = scales[i] * gs;
-    const radius = (GLOW_PX * viewBoxDim) / (BASE_HEIGHT * s);
+    const radius = (effectiveGlowPx * viewBoxDim) / (BASE_HEIGHT * scales[i] * gsGlow);
     const stdDev = radius * (26 / 20);
     const morph = filterEl.querySelector('feMorphology');
     const blur = filterEl.querySelector('feGaussianBlur');
     if (morph) morph.setAttribute('radius', String(Math.max(1, radius)));
     if (blur) blur.setAttribute('stdDeviation', String(Math.max(1, stdDev)));
 
-    // Bleed overlay filter (4px thicker glow) for liquid, gas, plasma
+    // Bleed overlay filter (GLOW_BLEED_FACTOR × base glow) for liquid, gas, plasma
     if (SHAPES[i].id === 'solid') return;
     const bleedFilterEl = document.getElementById(`inset-bleed-filter-${i}`);
     if (!bleedFilterEl) return;
-    const bleedRadius = (GLOW_BLEED_PX * viewBoxDim) / (BASE_HEIGHT * s);
+    const bleedRadius = (effectiveBleedPx * viewBoxDim) / (BASE_HEIGHT * scales[i] * gsGlow);
     const bleedStdDev = bleedRadius * (26 / 20);
     const bleedMorph = bleedFilterEl.querySelector('feMorphology');
     const bleedBlur = bleedFilterEl.querySelector('feGaussianBlur');
@@ -1231,6 +1244,10 @@ async function init() {
     paperTypeSelect.addEventListener('change', () => {
       paperType = paperTypeSelect.value;
       updatePaperClass();
+      requestAnimationFrame(() => {
+        updateShapeFilters();
+        updateBleedOverlayPositions();
+      });
     });
   }
 
