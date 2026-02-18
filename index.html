@@ -69,6 +69,11 @@
           </select>
         </div>
         <div class="menu-section">
+          <input type="file" id="background-upload" accept="image/*" style="display: none;" aria-label="Upload background image" />
+          <button type="button" id="background-upload-btn">Upload background</button>
+          <button type="button" id="background-clear-btn" class="hidden" style="margin-top: 0.25rem;">Clear background</button>
+        </div>
+        <div class="menu-section">
           <label for="scale">Scale</label>
           <input type="range" id="scale" min="25" max="800" value="100" aria-label="Scale all shapes" />
           <span id="scale-value" class="menu-value">100%</span>

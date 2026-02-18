@@ -1,5 +1,9 @@
+.hidden {
+  display: none !important;
+}
+
 .debug-section {
-  /* display: none;; */
+  display: none;
 }
 
 @font-face {
@@ -481,4 +485,30 @@ body.is-panning * {
 
 #download-btn:active {
   filter: brightness(0.95);
+}
+
+#background-upload-btn,
+#background-clear-btn {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-family: 'Niveau Grotesk', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  border: 1px solid #cecece;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+#background-upload-btn:hover,
+#background-clear-btn:hover {
+  background: #f0f0f0;
+}
+
+#background-clear-btn {
+  margin-top: 0.25rem;
+  border-color: #ccc;
+  color: #666;
 }

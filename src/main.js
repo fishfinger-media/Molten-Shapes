@@ -59,6 +59,8 @@ let boundsEl;
 let handleEls = {};
 
 let paperType = 'landscape';
+let backgroundImageUrl = null;   // object URL when user uploads an image
+let backgroundImageEl = null;   // HTMLImageElement (for export and dimensions)
 let groupScale = 100;
 let groupRotation = 0;
 let groupTranslateX = 0;
@@ -99,6 +101,13 @@ let panStartShapeWrap = null;
 
 function widthAtHeight(vw, vh, h) {
   return (vw / vh) * h;
+}
+
+function getPaperSpec() {
+  if (backgroundImageEl && backgroundImageEl.naturalWidth > 0) {
+    return { w: backgroundImageEl.naturalWidth, h: backgroundImageEl.naturalHeight };
+  }
+  return PAPER_SPECS[paperType];
 }
 
 async function fetchSVGContent(url) {
@@ -728,11 +737,22 @@ function updateGroupTransform() {
 
 function updatePaperClass() {
   if (!paperEl) return;
-  const spec = PAPER_SPECS[paperType];
+  const spec = getPaperSpec();
   if (spec) {
     paperEl.style.setProperty('--paper-aspect', String(spec.w / spec.h));
   }
   paperEl.classList.toggle('portrait', spec && spec.h > spec.w);
+  if (backgroundImageUrl) {
+    paperEl.style.backgroundImage = `url(${backgroundImageUrl})`;
+    paperEl.style.backgroundSize = 'cover';
+    paperEl.style.backgroundPosition = 'center';
+    paperEl.style.backgroundRepeat = 'no-repeat';
+  } else {
+    paperEl.style.backgroundImage = '';
+    paperEl.style.backgroundSize = '';
+    paperEl.style.backgroundPosition = '';
+    paperEl.style.backgroundRepeat = '';
+  }
 }
 
 function onPaperPointerDown(e) {
@@ -1035,7 +1055,7 @@ function exportImage() {
   const totalH = getTotalHeight();
   if (totalW <= 0) return;
 
-  const spec = PAPER_SPECS[paperType];
+  const spec = getPaperSpec();
   const paperW = Math.round(spec.w);
   const paperH = Math.round(spec.h);
   const gs = groupScale / 100;
@@ -1061,6 +1081,9 @@ function exportImage() {
   ctx.save();
   ctx.rect(0, 0, paperW, paperH);
   ctx.clip();
+  if (backgroundImageEl) {
+    ctx.drawImage(backgroundImageEl, 0, 0, paperW, paperH);
+  }
   // Replicate UI: center of paper = transform origin, then pan, rotate, scale
   ctx.translate(paperW / 2, paperH / 2);
   ctx.translate(txExport, tyExport);
@@ -1075,7 +1098,9 @@ function exportImage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `molten-shapes-${paperType}-300dpi.png`;
+        a.download = backgroundImageEl
+          ? 'molten-shapes-with-background.png'
+          : `molten-shapes-${paperType}-300dpi.png`;
         a.click();
         URL.revokeObjectURL(url);
       }, 'image/png');
@@ -1280,6 +1305,60 @@ async function init() {
       });
     });
   }
+
+  function updateBackgroundButtonsVisibility() {
+    const clearBtn = document.getElementById('background-clear-btn');
+    if (clearBtn) clearBtn.classList.toggle('hidden', !backgroundImageUrl);
+    const paperTypeSelect = document.getElementById('paper-type');
+    if (paperTypeSelect) paperTypeSelect.disabled = !!backgroundImageUrl;
+  }
+
+  const backgroundUploadInput = document.getElementById('background-upload');
+  const backgroundUploadBtn = document.getElementById('background-upload-btn');
+  if (backgroundUploadInput && backgroundUploadBtn) {
+    backgroundUploadBtn.addEventListener('click', () => backgroundUploadInput.click());
+    backgroundUploadInput.addEventListener('change', () => {
+      const file = backgroundUploadInput.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      if (backgroundImageUrl) URL.revokeObjectURL(backgroundImageUrl);
+      backgroundImageUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        backgroundImageEl = img;
+        updatePaperClass();
+        updateBackgroundButtonsVisibility();
+        requestAnimationFrame(() => {
+          updateLayout();
+          updateShapeFilters();
+          updateBleedOverlayPositions();
+        });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(backgroundImageUrl);
+        backgroundImageUrl = null;
+        backgroundImageEl = null;
+      };
+      img.src = backgroundImageUrl;
+      backgroundUploadInput.value = '';
+    });
+  }
+
+  const backgroundClearBtn = document.getElementById('background-clear-btn');
+  if (backgroundClearBtn) {
+    backgroundClearBtn.addEventListener('click', () => {
+      if (backgroundImageUrl) URL.revokeObjectURL(backgroundImageUrl);
+      backgroundImageUrl = null;
+      backgroundImageEl = null;
+      updatePaperClass();
+      updateBackgroundButtonsVisibility();
+      requestAnimationFrame(() => {
+        updateLayout();
+        updateShapeFilters();
+        updateBleedOverlayPositions();
+      });
+    });
+  }
+  updateBackgroundButtonsVisibility();
 
   const scaleInput = document.getElementById('scale');
   const scaleValueEl = document.getElementById('scale-value');
