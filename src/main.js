@@ -2,7 +2,7 @@ const BASE_HEIGHT = 240;
 const BACKGROUND_GREY = '#eaedef';
 const INSET_FILTERS = ['inset-blue', 'inset-green', 'inset-yellow', 'inset-red'];
 const GLOW_PX = 10; // base glow thickness in screen pixels (scales at 0.5x with view)
-const GLOW_BLEED_FACTOR = 1.4; // bleed overlay glow = base glow × this (e.g. 1.4 = 40% thicker)
+const GLOW_BLEED_FACTOR = 1; // bleed overlay glow = base glow × this (e.g. 1.4 = 40% thicker)
 const GLOW_VIEW_SCALE_POWER = 0.5; // glow scales at this power as paper shrinks/grows (0.5 = half the rate)
 const GLOW_REF_WIDTH = 1000; // reference paper width (px) at which effective glow = GLOW_PX
 // Bleed overlay: !flipGlow = left side (liquid, gas, plasma); flipGlow = right side (solid, liquid, gas)
@@ -80,6 +80,8 @@ let debugCircleCy = 50;   // % of layer height (50 = center) – fallback when p
 let debugCircleCyByShape = [50, 50, 42, 50]; // [unused, liquid, gas, plasma] Y % per shape
 let debugCircleR = 111;   // radius in px (default for liquid/gas)
 let debugCircleRByShape = [111, 111, 111, 127]; // [unused, liquid, gas, plasma] radius per shape (plasma 127)
+let debugBleedAlphaNormal = 1.3;   // bleed overlay alpha multiplier when !flipGlow
+let debugBleedAlphaFlipped = 1.3;  // bleed overlay alpha multiplier when flipGlow
 // Glow colour per shape (0=blue, 1=green, 2=yellow, 3=red). This shape's colour bleeds into the next.
 let glowColorByShapeIndex = [0, 1, 2, 3]; // [solid, liquid, gas, plasma] → plasma red by default
 let glowEnabled = false; // off by default; toggles bleed overlay only (base shapes always have their glow)
@@ -1012,7 +1014,6 @@ function drawBleedOverlayToCanvas(ctx, idx, rasterScale, callback) {
       circleCx * rs, circleCy * rs, R * rs
     );
     grad.addColorStop(0, 'white');
-    grad.addColorStop(innerR / R, 'white');
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     mCtx.fillStyle = grad;
     mCtx.fillRect(0, 0, lw, lh);
@@ -1193,15 +1194,38 @@ function initShapeFilters() {
     defs.appendChild(clone);
   });
   // Bleed overlay filters for all 4 shapes (0 used when flipGlow; 1,2,3 when !flipGlow)
+  // feColorMatrix boosts alpha so overlay colour doesn't blend with shape underneath; stronger when flipped (circle on right = more over current shape).
   [0, 1, 2, 3].forEach((i) => {
     const sourceId = i === 0 ? 'inset-blue' : BLEED_FILTER_SOURCES[i - 1];
     const baseFilter = document.getElementById(sourceId);
     if (!baseFilter) return;
     const clone = baseFilter.cloneNode(true);
     clone.id = `inset-bleed-filter-${i}`;
+    const last = clone.lastElementChild;
+    if (last && last.tagName === 'feComposite') {
+      last.setAttribute('result', 'bleedGlow');
+      const colorMatrix = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix');
+      colorMatrix.setAttribute('in', 'bleedGlow');
+      colorMatrix.setAttribute('type', 'matrix');
+      colorMatrix.setAttribute('result', 'bleedGlowBoosted');
+      colorMatrix.dataset.alphaBoost = 'true';
+      clone.appendChild(colorMatrix);
+    }
     defs.appendChild(clone);
   });
+  updateBleedFilterAlphaBoost();
   applyGlowColors();
+}
+
+function updateBleedFilterAlphaBoost() {
+  const alphaMultiplier = flipGlow ? debugBleedAlphaFlipped : debugBleedAlphaNormal;
+  const values = `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${alphaMultiplier} 0`;
+  [0, 1, 2, 3].forEach((i) => {
+    const bleedEl = document.getElementById(`inset-bleed-filter-${i}`);
+    if (!bleedEl) return;
+    const colorMatrix = bleedEl.querySelector('feColorMatrix[data-alpha-boost="true"]');
+    if (colorMatrix) colorMatrix.setAttribute('values', values);
+  });
 }
 
 async function init() {
@@ -1298,6 +1322,7 @@ async function init() {
     flipGlowCheckbox.checked = flipGlow;
     flipGlowCheckbox.addEventListener('change', () => {
       flipGlow = flipGlowCheckbox.checked;
+      updateBleedFilterAlphaBoost();
       updateGlowVisibility();
       applyGlowColors();
       updateBleedOverlayPositions();
@@ -1352,6 +1377,29 @@ async function init() {
     });
   }
   updateDebugCircleOutput();
+
+  const debugAlphaNormal = document.getElementById('debug-bleed-alpha-normal');
+  const debugAlphaFlipped = document.getElementById('debug-bleed-alpha-flipped');
+  if (debugAlphaNormal) {
+    debugAlphaNormal.value = debugBleedAlphaNormal;
+    const valueEl = document.getElementById('debug-bleed-alpha-normal-value');
+    if (valueEl) valueEl.textContent = debugBleedAlphaNormal;
+    debugAlphaNormal.addEventListener('input', () => {
+      debugBleedAlphaNormal = Number(debugAlphaNormal.value);
+      if (valueEl) valueEl.textContent = debugBleedAlphaNormal;
+      updateBleedFilterAlphaBoost();
+    });
+  }
+  if (debugAlphaFlipped) {
+    debugAlphaFlipped.value = debugBleedAlphaFlipped;
+    const valueEl = document.getElementById('debug-bleed-alpha-flipped-value');
+    if (valueEl) valueEl.textContent = debugBleedAlphaFlipped;
+    debugAlphaFlipped.addEventListener('input', () => {
+      debugBleedAlphaFlipped = Number(debugAlphaFlipped.value);
+      if (valueEl) valueEl.textContent = debugBleedAlphaFlipped;
+      updateBleedFilterAlphaBoost();
+    });
+  }
 
   document.querySelectorAll('.shape-color-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
